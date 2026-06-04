@@ -6,6 +6,7 @@ import Toolbar from './components/Toolbar';
 import MapArea from './components/MapArea';
 import BottomPanel from './components/BottomPanel';
 import ImportModal from './components/ImportModal';
+import CloudScenarioModal from './components/CloudScenarioModal';
 import ManholeListWindow from './components/ManholeListWindow';
 import PipeListWindow from './components/PipeListWindow';
 import CatchmentListWindow from './components/CatchmentListWindow';
@@ -24,6 +25,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   // 局部状态：控制导入数据弹窗的显示与隐藏
   const [showImport, setShowImport] = useState(false);
+  // 局部状态：控制 Cloud D1 剧本同步弹窗的显示与隐藏
+  const [showCloudScenario, setShowCloudScenario] = useState(false);
   // 局部状态：存储降雨强度，默认值为50毫米/小时
   const [rainfall, setRainfall] = useState(50); // mm/hr
   
@@ -141,6 +144,7 @@ export default function App() {
           setShowValidationPanel(false); // keep workspace clean by hiding validation side by side if preferred
         }}
         showAdaptiveCatchment={showAdaptiveCatchment}
+        onOpenCloudScenario={() => setShowCloudScenario(true)}
       />
       
       {/* 中间主要内容区域：水平布局，包含侧边栏和地图区域 */}
@@ -265,6 +269,12 @@ export default function App() {
         isOpen={showImport}
         onClose={() => setShowImport(false)}
         onImport={store.addImportedData}
+      />
+
+      {/* D1 云数据库快照剧本管理器 */}
+      <CloudScenarioModal
+        isOpen={showCloudScenario}
+        onClose={() => setShowCloudScenario(false)}
       />
 
       {/* Manhole 列表浮窗 */}

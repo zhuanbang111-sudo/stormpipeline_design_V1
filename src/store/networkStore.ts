@@ -90,6 +90,14 @@ export function useNetworkStore() {
     undo: store.undo,
     redo: store.redo,
     canUndo: store.pastStates.length > 0,
-    canRedo: store.futureStates.length > 0
+    canRedo: store.futureStates.length > 0,
+
+    // Cloud scenario sync integration
+    isSaving: store.isSaving,
+    cloudScenarios: store.cloudScenarios,
+    fetchCloudScenarios: store.fetchCloudScenarios,
+    syncScenarioToCloud: store.syncScenarioToCloud,
+    loadCloudScenario: store.loadCloudScenario,
+    deleteCloudScenario: store.deleteCloudScenario
   };
 }

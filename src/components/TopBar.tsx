@@ -1,6 +1,6 @@
-import { Settings, Download, Upload, FileText, Undo2, Redo2, CloudRain, Activity, Cpu } from 'lucide-react';
+import { Settings, Download, Upload, FileText, Undo2, Redo2, CloudRain, Activity, Cpu, Database } from 'lucide-react';
 
-// 定义 TopBar 组件接收的属性 (Props)
+// 定义 TopBar 组件接收 of 属性 (Props)
 interface TopBarProps {
   onOpenSettings: () => void; // 打开设置弹窗的回调函数
   onOpenImport: () => void; // 打开导入弹窗的回调函数
@@ -15,6 +15,7 @@ interface TopBarProps {
   showValidationPanel?: boolean; // 校验侧边栏是否处于显示状态
   onOpenAdaptiveCatchment?: () => void; // 打开自适应汇水区部署引擎的回调
   showAdaptiveCatchment?: boolean; // 自适应汇水区部署引擎是否处于显示状态
+  onOpenCloudScenario?: () => void; // 打开云端剧本同步中心的回调
 }
 
 export default function TopBar({ 
@@ -30,7 +31,8 @@ export default function TopBar({
   onOpenValidation,
   showValidationPanel = false,
   onOpenAdaptiveCatchment,
-  showAdaptiveCatchment = false
+  showAdaptiveCatchment = false,
+  onOpenCloudScenario
 }: TopBarProps) {
   return (
     // 顶部导航栏容器
@@ -45,6 +47,16 @@ export default function TopBar({
       
       {/* 右侧区域：操作按钮组 */}
       <div className="flex items-center gap-2">
+        {onOpenCloudScenario && (
+          <button 
+            onClick={onOpenCloudScenario}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold text-indigo-400 bg-indigo-400/10 hover:bg-indigo-400/20 hover:text-indigo-300 rounded transition-all border border-indigo-400/35 shadow-lg shadow-indigo-400/5 mr-1 cursor-pointer"
+            title="一键保存/载入 Cloudflare D1 数据库剧本"
+          >
+            <Database size={15} className="animate-pulse" /> D1 云端剧本
+          </button>
+        )}
+
         {onOpenValidation && (
           <button 
             onClick={onOpenValidation}

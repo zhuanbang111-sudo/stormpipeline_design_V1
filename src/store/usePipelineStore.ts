@@ -61,6 +61,10 @@ export interface PipelineState {
     links: EnhancedLink[];
     catchments: EnhancedCatchment[];
   }>;
+
+  // Cloud scenarios support
+  isSaving: boolean;
+  cloudScenarios: Array<{ id: string, name: string, description: string, created_at: string }>;
 }
 
 export interface PipelineActions {
@@ -113,6 +117,12 @@ export interface PipelineActions {
   // Flow & sanity repairs
   reverseLinkDirection: (linkId: string) => void;
   autoMatchDownstreamDiameter: (linkId: string) => void;
+
+  // Cloud scenarios actions
+  fetchCloudScenarios: () => Promise<void>;
+  syncScenarioToCloud: (name: string, description: string) => Promise<boolean>;
+  loadCloudScenario: (scenarioId: string) => Promise<boolean>;
+  deleteCloudScenario: (scenarioId: string) => Promise<boolean>;
 }
 
 const haversineDistance = (pt1: [number, number], pt2: [number, number]): number => {
@@ -204,6 +214,9 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
 
     pastStates: [],
     futureStates: [],
+
+    isSaving: false,
+    cloudScenarios: [],
 
     undo: () => {
       const { pastStates, nodes, links, catchments, futureStates } = get();
@@ -679,6 +692,91 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
         return { links: nextLinks };
       });
       get().runSim();
+    },
+
+    fetchCloudScenarios: async () => {
+      try {
+        const response = await fetch('/api/scenarios');
+        if (!response.ok) {
+          throw new Error(`Cloud error: ${response.statusText}`);
+        }
+        const data = await response.json();
+        set({ cloudScenarios: Array.isArray(data) ? data : [] });
+      } catch (err) {
+        console.error('Failed to fetch cloud scenarios:', err);
+      }
+    },
+
+    syncScenarioToCloud: async (name, description) => {
+      set({ isSaving: true });
+      try {
+        const { nodes, links, catchments } = get();
+        // Prepare comprehensive dataset package
+        const payload = {
+          name,
+          description,
+          nodes,
+          links,
+          catchments
+        };
+        const response = await fetch('/api/scenarios', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          const errMsg = await response.text();
+          throw new Error(errMsg || `Status ${response.status}`);
+        }
+        await get().fetchCloudScenarios();
+        return true;
+      } catch (err) {
+        console.error('Failed to sync scenario to cloud:', err);
+        return false;
+      } finally {
+        set({ isSaving: false });
+      }
+    },
+
+    loadCloudScenario: async (scenarioId) => {
+      try {
+        const response = await fetch(`/api/scenarios?id=${scenarioId}`);
+        if (!response.ok) {
+          throw new Error(`Load error: ${response.statusText}`);
+        }
+        const data = await response.json();
+        if (data && data.nodes) {
+          get().pushHistory();
+          set({
+            nodes: data.nodes || [],
+            links: data.links || [],
+            catchments: data.catchments || [],
+            selectedElement: null
+          });
+          get().runSim();
+          return true;
+        }
+        return false;
+      } catch (err) {
+        console.error('Failed to load cloud scenario:', err);
+        return false;
+      }
+    },
+
+    deleteCloudScenario: async (scenarioId) => {
+      try {
+        const response = await fetch(`/api/scenarios?id=${scenarioId}`, {
+          method: 'DELETE'
+        });
+        if (!response.ok) {
+          throw new Error(`Delete error: ${response.statusText}`);
+        }
+        await get().fetchCloudScenarios();
+        return true;
+      } catch (err) {
+        console.error('Failed to delete cloud scenario:', err);
+        return false;
+      }
     },
   };
 });
