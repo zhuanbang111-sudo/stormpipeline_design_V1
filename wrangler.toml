@@ -12,3 +12,8 @@ not_found_handling = "single-page-application"
 [vars]
 # Define build or runtime environment variables here if needed
 NODE_VERSION = "20"
+
+[[d1_databases]]
+binding = "DB"             # 必须叫 DB，这对应你代码里 env.DB 的变量名
+database_name = "storm-db"   # 你之前在云端创建的 D1 数据库真实名称
+database_id = "419b3abb-8f0c-45ee-9ec7-0526d07e32f3"  # 你的 D1 数据库真实 ID
