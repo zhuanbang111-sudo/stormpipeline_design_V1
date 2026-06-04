@@ -2,8 +2,11 @@ import { useState, useRef } from 'react';
 import { SimulationResult, Node, Link, Catchment } from '../types';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
 import { cn } from '../lib/utils';
-import { ChevronUp, ChevronDown, Activity, Table as TableIcon, GripHorizontal } from 'lucide-react';
+import { ChevronUp, ChevronDown, Activity, Table as TableIcon, GripHorizontal, FileText, Monitor } from 'lucide-react';
 import Draggable from 'react-draggable';
+import PipeProfileCanvas from './PipeProfileCanvas';
+import SimulationDashboard from './SimulationDashboard';
+import { usePipelineStore } from '../store/usePipelineStore';
 
 // 定义 BottomPanel 组件接收的属性 (Props)
 interface BottomPanelProps {
@@ -15,13 +18,31 @@ interface BottomPanelProps {
 
 export default function BottomPanel({ simulationResult, nodes, links, catchments }: BottomPanelProps) {
   const nodeRef = useRef(null);
+  const { selectedElement } = usePipelineStore();
+  
   // 局部状态：控制底部面板是否展开
   const [expanded, setExpanded] = useState(false);
-  // 局部状态：控制当前激活的选项卡（图表、节点结果表格、管线结果表格、汇水区列表）
-  const [activeTab, setActiveTab] = useState<'nodes' | 'links' | 'charts' | 'catchments'>('charts');
+  // 局部状态：控制当前激活的选项卡
+  const [activeTab, setActiveTab] = useState<'nodes' | 'links' | 'charts' | 'catchments' | 'profile' | 'twin'>('charts');
 
   // 如果没有模拟结果，则不渲染底部面板
   if (!simulationResult) return null;
+
+  // Compute dimensions dynamically based on tab content complexity
+  let widthClass = "w-[800px]";
+  let heightClass = "h-[500px]";
+  if (expanded) {
+    if (activeTab === 'twin') {
+      widthClass = "w-[1140px]";
+      heightClass = "h-[640px]";
+    } else if (activeTab === 'profile') {
+      widthClass = "w-[960px]";
+      heightClass = "h-[540px]";
+    } else {
+      widthClass = "w-[850px]";
+      heightClass = "h-[500px]";
+    }
+  }
 
   return (
     <Draggable nodeRef={nodeRef} handle=".drag-handle">
@@ -30,7 +51,7 @@ export default function BottomPanel({ simulationResult, nodes, links, catchments
         ref={nodeRef}
         className={cn(
         "fixed bottom-4 right-84 bg-white border border-gray-200 shadow-2xl rounded-xl transition-[width,height] duration-300 z-[1000] flex flex-col overflow-hidden",
-        expanded ? "w-[800px] h-[500px]" : "w-64 h-12" // 根据展开状态动态调整尺寸
+        expanded ? `${widthClass} ${heightClass}` : "w-64 h-12" // 根据展开状态动态调整尺寸
       )}>
         {/* 面板的头部（标题栏），点击可以切换展开/折叠状态 */}
         <div 
@@ -47,27 +68,39 @@ export default function BottomPanel({ simulationResult, nodes, links, catchments
           <div className="flex items-center gap-4">
             {/* 只有在面板展开时才显示选项卡按钮 */}
             {expanded && (
-              <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+              <div className="flex gap-1 overflow-x-auto max-w-[550px] scrollbar-none" onClick={e => e.stopPropagation()}>
                 <button 
-                  className={cn("px-3 py-1 text-xs rounded-md transition-all", activeTab === 'charts' ? "bg-blue-600 text-white shadow-md font-semibold" : "text-gray-600 hover:bg-gray-200")}
+                  className={cn("px-2.5 py-1 text-xs rounded-md transition-all whitespace-nowrap", activeTab === 'twin' ? "bg-blue-600 text-white shadow-md font-semibold" : "text-gray-600 hover:bg-gray-200")}
+                  onClick={() => setActiveTab('twin')}
+                >
+                  🌐 数字化双胞胎
+                </button>
+                <button 
+                  className={cn("px-2.5 py-1 text-xs rounded-md transition-all whitespace-nowrap", activeTab === 'profile' ? "bg-blue-600 text-white shadow-md font-semibold" : "text-gray-600 hover:bg-gray-200")}
+                  onClick={() => setActiveTab('profile')}
+                >
+                  📐 纵断面设计
+                </button>
+                <button 
+                  className={cn("px-2.5 py-1 text-xs rounded-md transition-all whitespace-nowrap", activeTab === 'charts' ? "bg-blue-600 text-white shadow-md font-semibold" : "text-gray-600 hover:bg-gray-200")}
                   onClick={() => setActiveTab('charts')}
                 >
                   Charts
                 </button>
                 <button 
-                  className={cn("px-3 py-1 text-xs rounded-md transition-all", activeTab === 'nodes' ? "bg-blue-600 text-white shadow-md font-semibold" : "text-gray-600 hover:bg-gray-200")}
+                  className={cn("px-2.5 py-1 text-xs rounded-md transition-all whitespace-nowrap", activeTab === 'nodes' ? "bg-blue-600 text-white shadow-md font-semibold" : "text-gray-600 hover:bg-gray-200")}
                   onClick={() => setActiveTab('nodes')}
                 >
                   Nodes
                 </button>
                 <button 
-                  className={cn("px-3 py-1 text-xs rounded-md transition-all", activeTab === 'links' ? "bg-blue-600 text-white shadow-md font-semibold" : "text-gray-600 hover:bg-gray-200")}
+                  className={cn("px-2.5 py-1 text-xs rounded-md transition-all whitespace-nowrap", activeTab === 'links' ? "bg-blue-600 text-white shadow-md font-semibold" : "text-gray-600 hover:bg-gray-200")}
                   onClick={() => setActiveTab('links')}
                 >
                   Pipes
                 </button>
                 <button 
-                  className={cn("px-3 py-1 text-xs rounded-md transition-all", activeTab === 'catchments' ? "bg-blue-600 text-white shadow-md font-semibold" : "text-gray-600 hover:bg-gray-200")}
+                  className={cn("px-2.5 py-1 text-xs rounded-md transition-all whitespace-nowrap", activeTab === 'catchments' ? "bg-blue-600 text-white shadow-md font-semibold" : "text-gray-600 hover:bg-gray-200")}
                   onClick={() => setActiveTab('catchments')}
                 >
                   Catchments
@@ -82,7 +115,39 @@ export default function BottomPanel({ simulationResult, nodes, links, catchments
 
         {/* 当面板展开时，渲染具体的内容区域 */}
         {expanded && (
-          <div className="flex-1 overflow-hidden p-4 bg-white">
+          <div className="flex-1 overflow-hidden p-4 bg-white flex flex-col">
+            {/* ==================== 渲染 数字化双胞胎 选项卡 ==================== */}
+            {activeTab === 'twin' && (
+              <div className="flex-1 overflow-auto bg-slate-950 p-2.5 rounded-xl">
+                <SimulationDashboard />
+              </div>
+            )}
+
+            {/* ==================== 渲染 纵断面设计 选项卡 ==================== */}
+            {activeTab === 'profile' && (
+              <div className="flex-1 overflow-hidden flex flex-col gap-3 min-h-[300px]">
+                {selectedElement?.type === 'link' ? (
+                  <div className="flex-1 flex flex-col">
+                    <div className="flex items-center gap-2 mb-1.5 px-1 bg-slate-50 border border-slate-100 rounded-lg p-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                      <span className="text-xs font-bold text-slate-700">
+                        正在分析选中的管线：<span className="font-mono text-sky-650">{links.find(l => l.id === selectedElement.id)?.name}</span> 极其关联井室的高程图
+                      </span>
+                    </div>
+                    <div className="flex-1 min-h-[320px] bg-slate-950 border border-slate-850 rounded-xl overflow-hidden shadow-inner relative flex items-center justify-center">
+                      <PipeProfileCanvas activeLinkId={selectedElement.id} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-slate-50 border border-dashed border-slate-250 rounded-xl text-slate-500">
+                    <span className="text-3xl mb-3">📐</span>
+                    <h4 className="text-sm font-bold text-slate-700 mb-1">未选择管线 (Pipe Link)</h4>
+                    <p className="text-xs max-w-sm">请点击地图上的排水管网管线，或在 Pipes 表格选项卡中选中任意管段，系统即刻生成该管段的智能三维地表及管路纵断面高程拖拽分析仪。</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* ==================== 渲染图表选项卡 ==================== */}
             {activeTab === 'charts' && (
               <div className="h-full w-full min-h-[300px]">

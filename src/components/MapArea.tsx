@@ -160,6 +160,36 @@ export default function MapArea({
     return () => window.removeEventListener('map-auto-fit', handleAutoFit);
   }, [map]);
 
+  // Center on selected elements
+  useEffect(() => {
+    if (!map || !selectedElement) return;
+    const { type, id } = selectedElement;
+    if (type === 'node') {
+      const node = nodes.find(n => n.id === id);
+      if (node) {
+        map.setView([node.lat, node.lng], Math.max(map.getZoom(), 16));
+      }
+    } else if (type === 'link') {
+      const link = links.find(l => l.id === id);
+      if (link) {
+        const fromNode = nodes.find(n => n.id === link.fromNodeId);
+        const toNode = nodes.find(n => n.id === link.toNodeId);
+        if (fromNode && toNode) {
+          const lat = (fromNode.lat + toNode.lat) / 2;
+          const lng = (fromNode.lng + toNode.lng) / 2;
+          map.setView([lat, lng], Math.max(map.getZoom(), 16));
+        }
+      }
+    } else if (type === 'catchment') {
+      const catchment = catchments.find(c => c.id === id);
+      if (catchment && catchment.polygon.length > 0) {
+        const lat = catchment.polygon.reduce((sum, p) => sum + p[0], 0) / catchment.polygon.length;
+        const lng = catchment.polygon.reduce((sum, p) => sum + p[1], 0) / catchment.polygon.length;
+        map.setView([lat, lng], Math.max(map.getZoom(), 16));
+      }
+    }
+  }, [selectedElement, map, nodes, links, catchments]);
+
   return (
     <div className="w-full h-full relative" onMouseMove={(e) => {
       // 在这里可以处理鼠标移动事件，例如用于绘制管线时的动态连线

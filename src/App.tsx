@@ -9,6 +9,9 @@ import ImportModal from './components/ImportModal';
 import ManholeListWindow from './components/ManholeListWindow';
 import PipeListWindow from './components/PipeListWindow';
 import CatchmentListWindow from './components/CatchmentListWindow';
+import ChicagoRainGenerator from './components/ChicagoRainGenerator';
+import NetworkValidationPanel from './components/NetworkValidationPanel';
+import AdaptiveCatchmentEngine from './components/AdaptiveCatchmentEngine';
 import { useNetworkStore } from './store/networkStore';
 import { exportToDXF, exportReport } from './lib/exportUtils';
 import { X } from 'lucide-react';
@@ -30,6 +33,12 @@ export default function App() {
   const [showPipeList, setShowPipeList] = useState(false);
   // 局部状态：控制 Catchment 列表浮窗显示
   const [showCatchmentList, setShowCatchmentList] = useState(false);
+  // 局部状态：控制芝加哥暴雨发生器浮窗显示
+  const [showChicagoGenerator, setShowChicagoGenerator] = useState(false);
+  // 局部状态：控制水力合规性校验侧边栏显示，默认开启让用户立刻见证其威力
+  const [showValidationPanel, setShowValidationPanel] = useState(true);
+  // 局部状态：控制自适应汇水区引擎展示
+  const [showAdaptiveCatchment, setShowAdaptiveCatchment] = useState(false);
   
   /**
    * 处理地图点击事件
@@ -124,6 +133,14 @@ export default function App() {
         onRedo={store.redo} // 重做操作
         canUndo={store.canUndo} // 是否可以撤销
         canRedo={store.canRedo} // 是否可以重做
+        onOpenChicago={() => setShowChicagoGenerator(prev => !prev)}
+        onOpenValidation={() => setShowValidationPanel(prev => !prev)}
+        showValidationPanel={showValidationPanel}
+        onOpenAdaptiveCatchment={() => {
+          setShowAdaptiveCatchment(prev => !prev);
+          setShowValidationPanel(false); // keep workspace clean by hiding validation side by side if preferred
+        }}
+        showAdaptiveCatchment={showAdaptiveCatchment}
       />
       
       {/* 中间主要内容区域：水平布局，包含侧边栏和地图区域 */}
@@ -183,6 +200,16 @@ export default function App() {
             showCatchmentList={showCatchmentList}
             setShowCatchmentList={setShowCatchmentList}
           />
+
+          {/* 全网水力校验合规性面板 */}
+          {showValidationPanel && (
+            <NetworkValidationPanel onClose={() => setShowValidationPanel(false)} />
+          )}
+
+          {/* 自适应汇水区智能部署引擎 */}
+          {showAdaptiveCatchment && (
+            <AdaptiveCatchmentEngine onClose={() => setShowAdaptiveCatchment(false)} />
+          )}
           
           {/* 如果正在绘制汇水区，在地图上方显示提示信息 */}
           {store.selectedTool === 'add_catchment' && store.drawingCatchmentPoints.length > 0 && (
@@ -274,6 +301,13 @@ export default function App() {
           setSelectedElement={store.setSelectedElement}
           onClose={() => setShowCatchmentList(false)}
           generateVoronoiCatchments={store.generateVoronoiCatchments}
+        />
+      )}
+
+      {/* Chicago 芝加哥暴雨雨型发生器 */}
+      {showChicagoGenerator && (
+        <ChicagoRainGenerator 
+          onClose={() => setShowChicagoGenerator(false)}
         />
       )}
 

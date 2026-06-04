@@ -1,4 +1,4 @@
-import { Settings, Download, Upload, FileText, Undo2, Redo2, CloudRain } from 'lucide-react';
+import { Settings, Download, Upload, FileText, Undo2, Redo2, CloudRain, Activity, Cpu } from 'lucide-react';
 
 // 定义 TopBar 组件接收的属性 (Props)
 interface TopBarProps {
@@ -10,9 +10,28 @@ interface TopBarProps {
   onRedo: () => void; // 重做操作的回调函数
   canUndo: boolean; // 是否可以撤销（用于控制按钮的禁用状态）
   canRedo: boolean; // 是否可以重做（用于控制按钮的禁用状态）
+  onOpenChicago?: () => void; // 打开芝加哥雨型发生器的回调函数
+  onOpenValidation?: () => void; // 打开校验侧边栏的回调函数
+  showValidationPanel?: boolean; // 校验侧边栏是否处于显示状态
+  onOpenAdaptiveCatchment?: () => void; // 打开自适应汇水区部署引擎的回调
+  showAdaptiveCatchment?: boolean; // 自适应汇水区部署引擎是否处于显示状态
 }
 
-export default function TopBar({ onOpenSettings, onOpenImport, onExportDXF, onExportReport, onUndo, onRedo, canUndo, canRedo }: TopBarProps) {
+export default function TopBar({ 
+  onOpenSettings, 
+  onOpenImport, 
+  onExportDXF, 
+  onExportReport, 
+  onUndo, 
+  onRedo, 
+  canUndo, 
+  canRedo, 
+  onOpenChicago,
+  onOpenValidation,
+  showValidationPanel = false,
+  onOpenAdaptiveCatchment,
+  showAdaptiveCatchment = false
+}: TopBarProps) {
   return (
     // 顶部导航栏容器
     <div className="h-14 bg-slate-900 text-white flex items-center justify-between px-4 z-20 shadow-md">
@@ -26,6 +45,41 @@ export default function TopBar({ onOpenSettings, onOpenImport, onExportDXF, onEx
       
       {/* 右侧区域：操作按钮组 */}
       <div className="flex items-center gap-2">
+        {onOpenValidation && (
+          <button 
+            onClick={onOpenValidation}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded transition-all border shadow-lg mr-1 ${
+              showValidationPanel 
+                ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-500/10' 
+                : 'text-emerald-400 bg-emerald-400/10 hover:bg-emerald-400/20 hover:text-emerald-300 border-emerald-400/35 shadow-emerald-400/5'
+            }`}
+          >
+            <Activity size={15} className={showValidationPanel ? 'animate-pulse' : ''} /> 水力合规校验
+          </button>
+        )}
+
+        {onOpenChicago && (
+          <button 
+            onClick={onOpenChicago}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold text-amber-400 bg-amber-400/10 hover:bg-amber-400/20 hover:text-amber-300 rounded transition-all border border-amber-400/35 shadow-lg shadow-amber-400/5 mr-1"
+          >
+            <CloudRain size={15} className="animate-bounce" /> 芝加哥雨型
+          </button>
+        )}
+
+        {onOpenAdaptiveCatchment && (
+          <button 
+            onClick={onOpenAdaptiveCatchment}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded transition-all border shadow-lg mr-1 ${
+              showAdaptiveCatchment 
+                ? 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-500/10' 
+                : 'text-indigo-400 bg-indigo-400/10 hover:bg-indigo-400/20 hover:text-indigo-300 border-indigo-400/35 shadow-indigo-400/5'
+            }`}
+          >
+            <Cpu size={15} className={showAdaptiveCatchment ? 'animate-spin' : ''} /> 自适应汇水区
+          </button>
+        )}
+
         {/* 撤销按钮 */}
         <button 
           onClick={onUndo}

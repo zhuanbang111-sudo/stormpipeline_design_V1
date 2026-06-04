@@ -22,6 +22,18 @@ const REGIONS = {
     name: '深圳东部 (Eastern)',
     params: { A: 1914.800, C: 0.695, b: 9.84, n: 0.605 }
   },
+  guangzhou: {
+    name: '广州 (Guangzhou)',
+    params: { A: 2446.700, C: 0.552, b: 11.70, n: 0.720 }
+  },
+  beijing: {
+    name: '北京 (Beijing)',
+    params: { A: 1602.0, C: 0.559, b: 9.0, n: 0.659 }
+  },
+  shanghai: {
+    name: '上海 (Shanghai)',
+    params: { A: 2434.0, C: 0.55, b: 12.0, n: 0.72 }
+  },
   custom: {
     name: '自定义 (其他城市)',
     params: { A: 2000, C: 0.6, b: 10, n: 0.6 }
@@ -62,33 +74,162 @@ export default function HydraulicSidebar({ params, setParams, runSim }: Hydrauli
         <div className="space-y-3">
           <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
             <Settings2 size={14} />
-            Calculation Method
+            Calculation Method (核心计算手段)
           </label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-xl">
             <button
               onClick={() => updateParam('method', 'rational')}
               className={cn(
-                "py-2 px-3 text-xs font-medium rounded-lg border transition-all",
+                "py-1.5 px-2 text-[10px] sm:text-xs font-semibold rounded-lg transition-all",
                 params.method === 'rational'
-                  ? "bg-blue-600 border-blue-600 text-white shadow-md"
-                  : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                  ? "bg-blue-600 text-white shadow-md"
+                  : "text-gray-600 hover:bg-gray-200"
               )}
             >
-              Rational Method
+              推理公式
             </button>
             <button
               onClick={() => updateParam('method', 'constant')}
               className={cn(
-                "py-2 px-3 text-xs font-medium rounded-lg border transition-all",
+                "py-1.5 px-2 text-[10px] sm:text-xs font-semibold rounded-lg transition-all",
                 params.method === 'constant'
-                  ? "bg-blue-600 border-blue-600 text-white shadow-md"
-                  : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                  ? "bg-blue-600 text-white shadow-md"
+                  : "text-gray-600 hover:bg-gray-200"
               )}
             >
-              Constant Flow
+              恒定强度
+            </button>
+            <button
+              onClick={() => {
+                updateParam('method', 'chicago');
+                if (!params.chicagoParams) {
+                  setParams({
+                    ...params,
+                    method: 'chicago',
+                    chicagoParams: { r: 0.4 }
+                  });
+                }
+              }}
+              className={cn(
+                "py-1.5 px-1.5 text-[10px] sm:text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-0.5",
+                params.method === 'chicago'
+                  ? "bg-blue-600 text-white shadow-md"
+                  : "text-gray-600 hover:bg-gray-200"
+              )}
+            >
+              🌧️ 芝加哥雨型
             </button>
           </div>
         </div>
+
+        {/* Chicago Rain Formula Parameters */}
+        {params.method === 'chicago' && (
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <MapPin size={14} />
+                Region Selection
+              </label>
+              <select
+                value={params.region}
+                onChange={(e) => handleRegionChange(e.target.value as any)}
+                className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+              >
+                {Object.entries(REGIONS).map(([key, region]) => (
+                  <option key={key} value={key}>{region.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-4 p-4 bg-sky-50 rounded-xl border border-sky-150">
+              <div className="flex items-center gap-2 text-sky-800 font-semibold text-sm">
+                <Info size={14} />
+                Chicago Rain Formulas (暴雨公式)
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-medium text-sky-700 mb-1">Parameter A</label>
+                  <input
+                    type="number"
+                    value={params.formulaParams.A}
+                    onChange={e => updateFormulaParam('A', parseFloat(e.target.value) || 0)}
+                    className="w-full bg-white border border-sky-200 rounded-md px-2 py-1 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-sky-700 mb-1">Parameter C</label>
+                  <input
+                    type="number"
+                    value={params.formulaParams.C}
+                    onChange={e => updateFormulaParam('C', parseFloat(e.target.value) || 0)}
+                    className="w-full bg-white border border-sky-200 rounded-md px-2 py-1 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-sky-700 mb-1">Parameter b (min)</label>
+                  <input
+                    type="number"
+                    value={params.formulaParams.b}
+                    onChange={e => updateFormulaParam('b', parseFloat(e.target.value) || 0)}
+                    className="w-full bg-white border border-sky-200 rounded-md px-2 py-1 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-sky-700 mb-1">Parameter n</label>
+                  <input
+                    type="number"
+                    value={params.formulaParams.n}
+                    onChange={e => updateFormulaParam('n', parseFloat(e.target.value) || 0)}
+                    className="w-full bg-white border border-sky-200 rounded-md px-2 py-1 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-2 border-t border-sky-150">
+                <div>
+                  <label className="block text-[11px] font-medium text-sky-700 mb-1">Return Period P (Years / 重现期)</label>
+                  <input
+                    type="number"
+                    value={params.returnPeriod}
+                    onChange={e => updateParam('returnPeriod', parseFloat(e.target.value) || 1)}
+                    className="w-full bg-white border border-sky-200 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-[11px] font-medium text-sky-700">峰度系数 r (峰值位置比例)</label>
+                    <span className="text-xs font-mono font-bold text-sky-600">{params.chicagoParams?.r ?? 0.4}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="0.9"
+                    step="0.05"
+                    value={params.chicagoParams?.r ?? 0.4}
+                    onChange={e => {
+                      setParams({
+                        ...params,
+                        chicagoParams: { r: parseFloat(e.target.value) || 0.4 }
+                      });
+                    }}
+                    className="w-full accent-sky-600 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[8px] text-sky-500 font-mono">
+                    <span>0.1 (峰前极早)</span>
+                    <span>0.4 (雨峰居中)</span>
+                    <span>0.9 (峰后极晚)</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="text-[9px] text-sky-600 leading-relaxed italic text-center font-semibold">
+                雨峰时刻: {((params.chicagoParams?.r ?? 0.4) * params.stormDuration).toFixed(0)} min | 最大暴雨强: {((params.formulaParams.A * (1 + params.formulaParams.C * Math.log10(params.returnPeriod))) / Math.pow(params.formulaParams.b, params.formulaParams.n)).toFixed(1)} L/s·ha
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Shenzhen Formula Parameters */}
         {params.method === 'rational' && (

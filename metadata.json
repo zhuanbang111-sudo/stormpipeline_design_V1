@@ -1,5 +1,6 @@
 {
-  "name": "stormpipeline_design",
-  "description": "",
-  "requestFramePermissions": []
+  "name": "Urban Storm Drainage Simulator",
+  "description": "An industrial-grade storm drainage digital twin and real-time hydraulic simulation cockpit",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

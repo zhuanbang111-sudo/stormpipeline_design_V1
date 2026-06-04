@@ -3,18 +3,21 @@ import { calculatePeakRunoff, generateHydrograph } from './hydrology';
 
 // 定义模拟参数接口
 export interface SimulationParams {
-  method: 'rational' | 'constant'; // 计算方法：推理公式法 或 恒定强度法
+  method: 'rational' | 'constant' | 'chicago'; // 计算方法：推理公式法 或 恒定强度法 或 芝加哥雨型法
   mapType?: 'tianditu_vec' | 'tianditu_img' | 'osm'; // 底图类型
   rainfallIntensity: number; // 恒定降雨强度，单位：毫米/小时 (mm/hr)
   stormDuration: number; // 降雨持续时间，单位：分钟 (minutes)
   returnPeriod: number; // 重现期 P (年)
   delayCoefficient: number; // 折减系数 m
-  region: 'western' | 'central' | 'eastern' | 'custom'; // 深圳区域
+  region: 'western' | 'central' | 'eastern' | 'guangzhou' | 'beijing' | 'shanghai' | 'custom'; // 区域
   formulaParams: {
     A: number;
     C: number;
     b: number;
     n: number;
+  };
+  chicagoParams?: {
+    r: number; // 综合峰度系数 (0.3 ~ 0.5)
   };
 }
 
@@ -29,6 +32,40 @@ export function calculateShenzhenQ(P: number, t: number, params: { A: number, C:
   // q = A * (1 + C * lg(P)) / (t + b)^n
   const q = (params.A * (1 + params.C * Math.log10(P))) / Math.pow(t + params.b, params.n);
   return q;
+}
+
+/**
+ * 计算芝加哥瞬时降雨强度 (L/s/ha)
+ * @param t 当前时间 (分钟)
+ * @param T 总时间 (分钟)
+ * @param r 综合峰度系数 (0.3 ~ 0.5)
+ * @param P 重现期 (年)
+ * @param params 公式参数
+ * @returns 瞬时强度 (L/s/ha)
+ */
+export function calculateChicagoIntensity(
+  t: number,
+  T: number,
+  r: number,
+  P: number,
+  params: { A: number, C: number, b: number, n: number }
+): number {
+  const T_peak = r * T;
+  const A_comp = params.A * (1 + params.C * Math.log10(P));
+  const b = params.b;
+  const n = params.n;
+
+  if (t <= T_peak) {
+    const x = T_peak - t;
+    const numerator = A_comp * (((1 - n) * x) / r + b);
+    const denominator = Math.pow(x / r + b, n + 1);
+    return denominator > 0 ? numerator / denominator : A_comp / Math.pow(b, n);
+  } else {
+    const x = t - T_peak;
+    const numerator = A_comp * (((1 - n) * x) / (1 - r) + b);
+    const denominator = Math.pow(x / (1 - r) + b, n + 1);
+    return denominator > 0 ? numerator / denominator : A_comp / Math.pow(b, n);
+  }
 }
 
 /**
@@ -172,6 +209,12 @@ export function runSimulation(
       
       // 严格推理公式法：Q = (∑CA) * q / 1000 (因为 q 是 L/s/ha)
       nodeTotalFlows[uId] = nodeContributingCA[uId] * qLsha / 1000;
+    } else if (params.method === 'chicago') {
+      // 芝加哥雨型法的稳态设计流量按其最大峰值瞬时强度计算
+      const r_fact = params.chicagoParams?.r ?? 0.4;
+      const qPeakLsha = calculateChicagoIntensity(r_fact * params.stormDuration, params.stormDuration, r_fact, params.returnPeriod, params.formulaParams);
+      intensity = qPeakLsha / 167.1 * 60; 
+      nodeTotalFlows[uId] = nodeContributingCA[uId] * qPeakLsha / 1000;
     } else {
       // 恒定强度法：累加每个汇水区的流量
       nodeCatchments.forEach(c => {
@@ -277,12 +320,27 @@ export function runSimulation(
         // 使用该汇水区自身的地面集水时间作为初始历时
         const t1 = c.timeOfConcentration || 10;
         intensity = calculateShenzhenQ(params.returnPeriod, t1, params.formulaParams) / 167.1 * 60;
+        totalRunoff += calculatePeakRunoff(c, intensity) * ratio;
+      } else if (params.method === 'chicago') {
+        const r_fact = params.chicagoParams?.r ?? 0.4;
+        const instLsha = calculateChicagoIntensity(t, stormDuration, r_fact, params.returnPeriod, params.formulaParams);
+        const instMmHr = instLsha / 167.1 * 60;
+        totalRunoff += calculatePeakRunoff(c, instMmHr);
+      } else {
+        totalRunoff += calculatePeakRunoff(c, intensity) * ratio;
       }
-      totalRunoff += calculatePeakRunoff(c, intensity) * ratio;
     });
 
     nodes.filter(n => n.type === 'outfall').forEach(n => {
-      totalOutfall += nodeTotalFlows[n.id] * ratio;
+      if (params.method === 'chicago') {
+        const r_fact = params.chicagoParams?.r ?? 0.4;
+        const instLsha = calculateChicagoIntensity(t, stormDuration, r_fact, params.returnPeriod, params.formulaParams);
+        const peakLsha = calculateChicagoIntensity(r_fact * stormDuration, stormDuration, r_fact, params.returnPeriod, params.formulaParams);
+        const ratioOfPeak = peakLsha > 0 ? instLsha / peakLsha : 0;
+        totalOutfall += nodeTotalFlows[n.id] * ratioOfPeak;
+      } else {
+        totalOutfall += nodeTotalFlows[n.id] * ratio;
+      }
     });
 
     timeSeries.push({ time: t, totalRunoff, totalOutfall });
