@@ -341,29 +341,7 @@ export default function Sidebar({
               Select an element on the map to view and edit its properties.
             </div>
 
-            <div className="pt-6 border-t border-gray-100 space-y-3">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">汇水区智能建模</h3>
-              <div className="bg-green-50/40 p-4 rounded-lg border border-green-100 space-y-3">
-                <div className="flex gap-2">
-                  <Hexagon className="text-green-600 shrink-0 mt-0.5" size={16} />
-                  <div>
-                    <h4 className="text-xs font-bold text-gray-800">泰森多边形算法 (Voronoi)</h4>
-                    <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-                      基于检查井的空间分布，运用多维几何切分算法秒级自动划分每个检查井的理论径流集水范围，并全自动计量真实的地理属性（如几何面积等）。
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={generateVoronoiCatchments}
-                  className="w-full flex items-center justify-center gap-1.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded py-2 text-xs transition-all shadow-sm cursor-pointer"
-                >
-                  <Hexagon size={13} /> 一键自动生成汇水区
-                </button>
-                <div className="text-[10px] text-gray-400 text-center">
-                  * 提示：需保证当前地图中含有 3 个及以上检查井进行拓扑建网
-                </div>
-              </div>
-            </div>
+            {/* Voronoi layout section removed as requested */}
             
             {backgroundFeaturesCount > 0 && (
               <div className="pt-6 border-t border-gray-100">
