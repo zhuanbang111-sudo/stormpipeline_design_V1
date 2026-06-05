@@ -6,6 +6,7 @@ import { ChevronUp, ChevronDown, Activity, Table as TableIcon, GripHorizontal, F
 import Draggable from 'react-draggable';
 import PipeProfileCanvas from './PipeProfileCanvas';
 import SimulationDashboard from './SimulationDashboard';
+import HydraulicSummaryChart from './HydraulicSummaryChart';
 import { usePipelineStore } from '../store/usePipelineStore';
 
 // 定义 BottomPanel 组件接收的属性 (Props)
@@ -23,7 +24,7 @@ export default function BottomPanel({ simulationResult, nodes, links, catchments
   // 局部状态：控制底部面板是否展开
   const [expanded, setExpanded] = useState(false);
   // 局部状态：控制当前激活的选项卡
-  const [activeTab, setActiveTab] = useState<'nodes' | 'links' | 'charts' | 'catchments' | 'profile' | 'twin'>('charts');
+  const [activeTab, setActiveTab] = useState<'nodes' | 'links' | 'charts' | 'catchments' | 'profile' | 'twin' | 'hydraulics'>('hydraulics');
 
   // 如果没有模拟结果，则不渲染底部面板
   if (!simulationResult) return null;
@@ -38,6 +39,9 @@ export default function BottomPanel({ simulationResult, nodes, links, catchments
     } else if (activeTab === 'profile') {
       widthClass = "w-[960px]";
       heightClass = "h-[540px]";
+    } else if (activeTab === 'hydraulics') {
+      widthClass = "w-[1100px]";
+      heightClass = "h-[520px]";
     } else {
       widthClass = "w-[850px]";
       heightClass = "h-[500px]";
@@ -80,6 +84,12 @@ export default function BottomPanel({ simulationResult, nodes, links, catchments
                   onClick={() => setActiveTab('profile')}
                 >
                   📐 纵断面设计
+                </button>
+                <button 
+                  className={cn("px-2.5 py-1 text-xs rounded-md transition-all whitespace-nowrap", activeTab === 'hydraulics' ? "bg-blue-600 text-white shadow-md font-semibold" : "text-gray-600 hover:bg-gray-200")}
+                  onClick={() => setActiveTab('hydraulics')}
+                >
+                  📈 水力学合规 (GB)
                 </button>
                 <button 
                   className={cn("px-2.5 py-1 text-xs rounded-md transition-all whitespace-nowrap", activeTab === 'charts' ? "bg-blue-600 text-white shadow-md font-semibold" : "text-gray-600 hover:bg-gray-200")}
@@ -145,6 +155,13 @@ export default function BottomPanel({ simulationResult, nodes, links, catchments
                     <p className="text-xs max-w-sm">请点击地图上的排水管网管线，或在 Pipes 表格选项卡中选中任意管段，系统即刻生成该管段的智能三维地表及管路纵断面高程拖拽分析仪。</p>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ==================== 渲染水力合规双轴图表选项卡 ==================== */}
+            {activeTab === 'hydraulics' && (
+              <div className="flex-1 overflow-auto">
+                <HydraulicSummaryChart />
               </div>
             )}
 
