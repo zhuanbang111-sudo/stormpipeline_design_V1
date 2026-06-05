@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Polygon, useMapEvents, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Node, Link, Catchment, ToolType, SimulationResult, BackgroundFeature } from '../types';
 import { calculatePolygonArea } from '../lib/utils';
 import { usePipelineStore } from '../store/usePipelineStore';
+import FloodOverlay from './FloodOverlay';
 
 // 修复 Leaflet 默认图标在 React 中不显示的常见问题
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -129,6 +130,22 @@ export default function MapArea({
 
   const boundaryPolygon = usePipelineStore(state => state.boundaryPolygon);
   const spatialAnchor = usePipelineStore(state => state.spatialAnchor);
+  
+  const waterDepth2D = usePipelineStore(state => state.waterDepth2D);
+  const rows2D = usePipelineStore(state => state.rows2D);
+  const cols2D = usePipelineStore(state => state.cols2D);
+  const gridSize2D = usePipelineStore(state => state.gridSize2D);
+
+  const computedAnchor = useMemo(() => {
+    if (spatialAnchor) return spatialAnchor;
+    if (nodes && nodes.length > 0) {
+      return {
+        lat: nodes.reduce((sum, n) => sum + n.lat, 0) / nodes.length,
+        lng: nodes.reduce((sum, n) => sum + n.lng, 0) / nodes.length
+      };
+    }
+    return null;
+  }, [spatialAnchor, nodes]);
 
   // 局部状态：记录鼠标在屏幕上的位置（目前未使用，保留用于未来扩展）
   const [mousePos, setMousePos] = useState<[number, number] | null>(null);
@@ -256,6 +273,15 @@ export default function MapArea({
 
         {/* 挂载地图事件监听器 */}
         <MapEvents onMapClick={onMapClick} nodes={nodes} />
+
+        {/* ==================== 渲染 2D 积水地表漫流热力图层 ==================== */}
+        <FloodOverlay
+          waterDepthArray={waterDepth2D}
+          rows={rows2D}
+          cols={cols2D}
+          gridSize={gridSize2D}
+          anchor={computedAnchor}
+        />
 
         {/* ==================== 渲染片区范围线与空间锚点 ==================== */}
         {boundaryPolygon && boundaryPolygon.length > 0 && (
