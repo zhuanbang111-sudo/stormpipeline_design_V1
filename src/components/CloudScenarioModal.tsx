@@ -73,23 +73,23 @@ export default function CloudScenarioModal({ isOpen, onClose }: CloudScenarioMod
     setErrorMessage(null);
     setSaveSuccess(false);
 
-    const success = await syncScenarioToCloud(name, description);
-    if (success) {
+    const res = await syncScenarioToCloud(name, description);
+    if (res.success) {
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } else {
-      setErrorMessage("同步失败，请检查 Cloudflare Pages/D1 数据库绑定或网络状态。");
+      setErrorMessage(res.error || "同步失败，请检查 Cloudflare Pages/D1 数据库绑定或网络状态。");
     }
   };
 
   // Load snapshot
   const handleLoad = async (id: string) => {
     setSelectedScenarioId(id);
-    const success = await loadCloudScenario(id);
-    if (success) {
+    const res = await loadCloudScenario(id);
+    if (res.success) {
       onClose();
     } else {
-      setErrorMessage("回滚方案出错，数据库记录可能已损毁或无法检索。");
+      setErrorMessage(res.error || "回滚方案出错，数据库记录可能已损毁或无法检索。");
     }
     setSelectedScenarioId(null);
   };
@@ -98,9 +98,9 @@ export default function CloudScenarioModal({ isOpen, onClose }: CloudScenarioMod
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Avoid triggering load
     if (window.confirm("确定要在 Cloudflare D1 数据库中永久删除该管网剧本吗？本操作不可撤销！")) {
-      const success = await deleteCloudScenario(id);
-      if (!success) {
-        setErrorMessage("删除云端数据发生异常。");
+      const res = await deleteCloudScenario(id);
+      if (!res.success) {
+        setErrorMessage(res.error || "删除云端数据发生异常。");
       }
     }
   };

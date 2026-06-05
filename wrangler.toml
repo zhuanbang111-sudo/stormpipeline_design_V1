@@ -2,6 +2,7 @@
 # Documentation: https://developers.cloudflare.com/pages/functions/wrangler-configuration/
 
 name = "stormpipelinev1"
+main = "src/worker.ts"
 pages_build_output_dir = "dist"
 compatibility_date = "2026-06-02"
 

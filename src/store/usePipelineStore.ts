@@ -137,9 +137,9 @@ export interface PipelineActions {
 
   // Cloud scenarios actions
   fetchCloudScenarios: () => Promise<void>;
-  syncScenarioToCloud: (name: string, description: string) => Promise<boolean>;
-  loadCloudScenario: (scenarioId: string) => Promise<boolean>;
-  deleteCloudScenario: (scenarioId: string) => Promise<boolean>;
+  syncScenarioToCloud: (name: string, description: string) => Promise<{ success: boolean; error?: string }>;
+  loadCloudScenario: (scenarioId: string) => Promise<{ success: boolean; error?: string }>;
+  deleteCloudScenario: (scenarioId: string) => Promise<{ success: boolean; error?: string }>;
   
   importGeoJSONBoundary: (geojson: any) => boolean;
   setBoundaryPolygon: (polygon: [number, number][] | null) => void;
@@ -725,6 +725,16 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
         if (!response.ok) {
           throw new Error(`Cloud error: ${response.statusText}`);
         }
+        
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          const bodyText = await response.text();
+          if (bodyText.includes('<!DOCTYPE') || bodyText.includes('<!doctype')) {
+            throw new Error(`D1 数据库或 Worker 路由未激活: 接口返回了 HTML 页面而非 JSON。这通常是由于未能在 wrangler.toml 中绑定 D1 数据库或未部署 src/worker.ts 主入口导致。`);
+          }
+          throw new Error(`异常的响应格式: ${contentType}`);
+        }
+
         const data = await response.json();
         set({ cloudScenarios: Array.isArray(data) ? data : [] });
       } catch (err) {
@@ -751,15 +761,26 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
+        
         if (!response.ok) {
           const errMsg = await response.text();
           throw new Error(errMsg || `Status ${response.status}`);
         }
+
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          const bodyText = await response.text();
+          if (bodyText.includes('<!DOCTYPE') || bodyText.includes('<!doctype')) {
+            throw new Error(`Cloudflare API 异常: 未能拦截到有效的 API 解析器。请确保在 Cloudflare Workers 控制台成功绑定了 D1 数据库到变量 'DB'，并且未部署不合格的主路由。`);
+          }
+          throw new Error(`非预期的响应格式: ${contentType}`);
+        }
+
         await get().fetchCloudScenarios();
-        return true;
-      } catch (err) {
+        return { success: true };
+      } catch (err: any) {
         console.error('Failed to sync scenario to cloud:', err);
-        return false;
+        return { success: false, error: err.message || String(err) };
       } finally {
         set({ isSaving: false });
       }
@@ -771,6 +792,16 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
         if (!response.ok) {
           throw new Error(`Load error: ${response.statusText}`);
         }
+
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          const bodyText = await response.text();
+          if (bodyText.includes('<!DOCTYPE') || bodyText.includes('<!doctype')) {
+            throw new Error(`非预期的数据读取服务，可能是因为 D1 初始化由于配置不当被 Cloudflare 拒绝。`);
+          }
+          throw new Error(`未知的回复媒体类型: ${contentType}`);
+        }
+
         const data = await response.json();
         if (data && data.nodes) {
           get().pushHistory();
@@ -783,12 +814,12 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
             selectedElement: null
           });
           get().runSim();
-          return true;
+          return { success: true };
         }
-        return false;
-      } catch (err) {
+        return { success: false, error: "读取成功但数据结构不完整。" };
+      } catch (err: any) {
         console.error('Failed to load cloud scenario:', err);
-        return false;
+        return { success: false, error: err.message || String(err) };
       }
     },
 
@@ -800,11 +831,17 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
         if (!response.ok) {
           throw new Error(`Delete error: ${response.statusText}`);
         }
+
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          throw new Error(`删除任务接口没有响应 JSON 数据。`);
+        }
+
         await get().fetchCloudScenarios();
-        return true;
-      } catch (err) {
+        return { success: true };
+      } catch (err: any) {
         console.error('Failed to delete cloud scenario:', err);
-        return false;
+        return { success: false, error: err.message || String(err) };
       }
     },
 
