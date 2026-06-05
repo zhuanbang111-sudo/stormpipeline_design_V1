@@ -39,6 +39,7 @@ export default function CloudScenarioModal({ isOpen, onClose }: CloudScenarioMod
   const [name, setName] = useState<string>('');
   const [description, setDescription] = useState<string>('');
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [successInfoMessage, setSuccessInfoMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedScenarioId, setSelectedScenarioId] = useState<string | null>(null);
@@ -72,11 +73,16 @@ export default function CloudScenarioModal({ isOpen, onClose }: CloudScenarioMod
     }
     setErrorMessage(null);
     setSaveSuccess(false);
+    setSuccessInfoMessage(null);
 
     const res = await syncScenarioToCloud(name, description);
     if (res.success) {
+      setSuccessInfoMessage((res as any).message || null);
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+      setTimeout(() => {
+        setSaveSuccess(false);
+        setSuccessInfoMessage(null);
+      }, 5000);
     } else {
       setErrorMessage(res.error || "同步失败，请检查 Cloudflare Pages/D1 数据库绑定或网络状态。");
     }
@@ -97,7 +103,8 @@ export default function CloudScenarioModal({ isOpen, onClose }: CloudScenarioMod
   // Delete snapshot
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Avoid triggering load
-    if (window.confirm("确定要在 Cloudflare D1 数据库中永久删除该管网剧本吗？本操作不可撤销！")) {
+    const label = id.startsWith('local-') ? "本地浏览器缓存" : "Cloudflare D1 数据库";
+    if (window.confirm(`确定要在 ${label} 中永久删除该管网剧本吗？本操作不可撤销！`)) {
       const res = await deleteCloudScenario(id);
       if (!res.success) {
         setErrorMessage(res.error || "删除云端数据发生异常。");
@@ -166,8 +173,10 @@ export default function CloudScenarioModal({ isOpen, onClose }: CloudScenarioMod
 
               {saveSuccess && (
                 <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center gap-2.5">
-                  <CheckCircle size={15} className="text-emerald-400 shrink-0" />
-                  <span className="text-[11px] text-emerald-400 font-bold">快照同步完美，历史列表已全自动更新！</span>
+                  <CheckCircle size={15} className="text-emerald-400 shrink-0 font-bold animate-bounce" />
+                  <span className="text-[11px] text-emerald-400 font-bold leading-relaxed">
+                    {successInfoMessage || "快照同步完美，历史列表已全自动更新！"}
+                  </span>
                 </div>
               )}
 

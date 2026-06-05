@@ -720,42 +720,59 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
     },
 
     fetchCloudScenarios: async () => {
+      let cloudList: any[] = [];
       try {
         const response = await fetch('/api/scenarios');
-        if (!response.ok) {
-          throw new Error(`Cloud error: ${response.statusText}`);
-        }
-        
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          const bodyText = await response.text();
-          if (bodyText.includes('<!DOCTYPE') || bodyText.includes('<!doctype')) {
-            throw new Error(`D1 数据库或 Worker 路由未激活: 接口返回了 HTML 页面而非 JSON。这通常是由于未能在 wrangler.toml 中绑定 D1 数据库或未部署 src/worker.ts 主入口导致。`);
+        if (response.ok) {
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const data = await response.json();
+            cloudList = Array.isArray(data) ? data : [];
           }
-          throw new Error(`异常的响应格式: ${contentType}`);
         }
-
-        const data = await response.json();
-        set({ cloudScenarios: Array.isArray(data) ? data : [] });
       } catch (err) {
-        console.error('Failed to fetch cloud scenarios:', err);
+        console.warn('Cloud API offline or redirecting. Using local sandbox fallback for scenario management.', err);
       }
+
+      // Read local storage backups with fallback
+      const localDb: any[] = (() => {
+        try {
+          const raw = localStorage.getItem('dt_local_scenarios_db');
+          return raw ? JSON.parse(raw) : [];
+        } catch (e) {
+          return [];
+        }
+      })();
+
+      const localList = localDb.map((s: any) => ({
+        id: s.id,
+        name: s.name.endsWith('(本地暂存)') ? s.name : `${s.name} (本地暂存)`,
+        description: s.description || "同步处于 LocalStorage 暂存模式下的管网配置",
+        created_at: s.created_at
+      }));
+
+      // Merge results descendingly by date
+      const merged = [...localList, ...cloudList].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      set({ cloudScenarios: merged });
     },
 
     syncScenarioToCloud: async (name, description) => {
       set({ isSaving: true });
+      const { nodes, links, catchments, boundaryPolygon, spatialAnchor } = get();
+      const payload = {
+        name,
+        description,
+        nodes,
+        links,
+        catchments,
+        boundaryPolygon,
+        spatialAnchor
+      };
+
       try {
-        const { nodes, links, catchments, boundaryPolygon, spatialAnchor } = get();
-        // Prepare comprehensive dataset package
-        const payload = {
-          name,
-          description,
-          nodes,
-          links,
-          catchments,
-          boundaryPolygon,
-          spatialAnchor
-        };
         const response = await fetch('/api/scenarios', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -763,30 +780,85 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
         });
         
         if (!response.ok) {
-          const errMsg = await response.text();
-          throw new Error(errMsg || `Status ${response.status}`);
+          throw new Error(`HTTP status ${response.status}`);
         }
 
         const contentType = response.headers.get('content-type') || '';
         if (!contentType.includes('application/json')) {
           const bodyText = await response.text();
           if (bodyText.includes('<!DOCTYPE') || bodyText.includes('<!doctype')) {
-            throw new Error(`Cloudflare API 异常: 未能拦截到有效的 API 解析器。请确保在 Cloudflare Workers 控制台成功绑定了 D1 数据库到变量 'DB'，并且未部署不合格的主路由。`);
+            throw new Error("Cloud environment not active or returns HTML.");
           }
-          throw new Error(`非预期的响应格式: ${contentType}`);
+          throw new Error(`Invalid content-type: ${contentType}`);
         }
 
         await get().fetchCloudScenarios();
         return { success: true };
       } catch (err: any) {
-        console.error('Failed to sync scenario to cloud:', err);
-        return { success: false, error: err.message || String(err) };
+        console.warn('Post to cloud API failed, auto-saving to local storage sandbox:', err);
+        
+        // Save to browser Sandbox LocalStorage
+        try {
+          const localDb: any[] = (() => {
+            const raw = localStorage.getItem('dt_local_scenarios_db');
+            return raw ? JSON.parse(raw) : [];
+          })();
+
+          const scenarioId = 'local-' + Math.random().toString(36).substring(2, 9) + '-' + Date.now().toString(36);
+          const newScenario = {
+            id: scenarioId,
+            name: name.endsWith('(本地暂存)') ? name : `${name} (本地暂存)`,
+            description: description || "管网数据已安全暂存至当前浏览器 LocalStorage 中，可随时加载与演练。",
+            created_at: new Date().toISOString(),
+            nodes,
+            links,
+            catchments,
+            boundaryPolygon,
+            spatialAnchor
+          };
+
+          localDb.push(newScenario);
+          localStorage.setItem('dt_local_scenarios_db', JSON.stringify(localDb));
+          
+          await get().fetchCloudScenarios();
+          return { 
+            success: true, 
+            message: "⚠️ 云端 D1 数据集绑定暂不可用，系统已安全暂存该管网快照至浏览器本地沙箱（LocalStorage）。" 
+          };
+        } catch (localErr: any) {
+          return { success: false, error: `本地存储暂存失败: ${localErr.message || String(localErr)}` };
+        }
       } finally {
         set({ isSaving: false });
       }
     },
 
     loadCloudScenario: async (scenarioId) => {
+      // First, check if it's a local storage scenario
+      if (scenarioId.startsWith('local-')) {
+        try {
+          const raw = localStorage.getItem('dt_local_scenarios_db');
+          const localDb = raw ? JSON.parse(raw) : [];
+          const matched = localDb.find((s: any) => s.id === scenarioId);
+          if (matched) {
+            get().pushHistory();
+            set({
+              nodes: matched.nodes || [],
+              links: matched.links || [],
+              catchments: matched.catchments || [],
+              boundaryPolygon: matched.boundaryPolygon || null,
+              spatialAnchor: matched.spatialAnchor || null,
+              selectedElement: null
+            });
+            get().runSim();
+            return { success: true };
+          }
+        } catch (e) {
+          console.error("Failed to read from local scenarios database:", e);
+        }
+      }
+
+      // Try fetching from Cloud
       try {
         const response = await fetch(`/api/scenarios?id=${scenarioId}`);
         if (!response.ok) {
@@ -797,9 +869,9 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
         if (!contentType.includes('application/json')) {
           const bodyText = await response.text();
           if (bodyText.includes('<!DOCTYPE') || bodyText.includes('<!doctype')) {
-            throw new Error(`非预期的数据读取服务，可能是因为 D1 初始化由于配置不当被 Cloudflare 拒绝。`);
+            throw new Error("Main Cloud database returned SPA fallback content.");
           }
-          throw new Error(`未知的回复媒体类型: ${contentType}`);
+          throw new Error(`Unknown MIME type: ${contentType}`);
         }
 
         const data = await response.json();
@@ -818,30 +890,76 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
         }
         return { success: false, error: "读取成功但数据结构不完整。" };
       } catch (err: any) {
-        console.error('Failed to load cloud scenario:', err);
-        return { success: false, error: err.message || String(err) };
+        console.warn('Failed to load scene from cloud backend, searching local sandbox storage:', err);
+        
+        // Search local db as fallback for cloudId if matching
+        try {
+          const raw = localStorage.getItem('dt_local_scenarios_db');
+          const localDb = raw ? JSON.parse(raw) : [];
+          const matched = localDb.find((s: any) => s.id === scenarioId);
+          if (matched) {
+            get().pushHistory();
+            set({
+              nodes: matched.nodes || [],
+              links: matched.links || [],
+              catchments: matched.catchments || [],
+              boundaryPolygon: matched.boundaryPolygon || null,
+              spatialAnchor: matched.spatialAnchor || null,
+              selectedElement: null
+            });
+            get().runSim();
+            return { success: true };
+          }
+        } catch (e) {}
+
+        return { success: false, error: `获取管网方案失败: ${err.message || String(err)}` };
       }
     },
 
     deleteCloudScenario: async (scenarioId) => {
+      // If it is a local storage scenario
+      if (scenarioId.startsWith('local-')) {
+        try {
+          const raw = localStorage.getItem('dt_local_scenarios_db');
+          let localDb = raw ? JSON.parse(raw) : [];
+          localDb = localDb.filter((s: any) => s.id !== scenarioId);
+          localStorage.setItem('dt_local_scenarios_db', JSON.stringify(localDb));
+          await get().fetchCloudScenarios();
+          return { success: true };
+        } catch (e: any) {
+          return { success: false, error: `本地删除失败: ${e.message}` };
+        }
+      }
+
+      // Delete from cloud
       try {
         const response = await fetch(`/api/scenarios?id=${scenarioId}`, {
           method: 'DELETE'
         });
+        
+        // Even if Cloud API fails, if we also had it locally, delete it
         if (!response.ok) {
           throw new Error(`Delete error: ${response.statusText}`);
-        }
-
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          throw new Error(`删除任务接口没有响应 JSON 数据。`);
         }
 
         await get().fetchCloudScenarios();
         return { success: true };
       } catch (err: any) {
-        console.error('Failed to delete cloud scenario:', err);
-        return { success: false, error: err.message || String(err) };
+        console.warn('Failed to delete cloud scene, attempting local database sanitization:', err);
+        
+        // Fallback local deletion
+        try {
+          const raw = localStorage.getItem('dt_local_scenarios_db');
+          let localDb = raw ? JSON.parse(raw) : [];
+          if (localDb.some((s: any) => s.id === scenarioId)) {
+            localDb = localDb.filter((s: any) => s.id !== scenarioId);
+            localStorage.setItem('dt_local_scenarios_db', JSON.stringify(localDb));
+            await get().fetchCloudScenarios();
+            return { success: true };
+          }
+        } catch (e) {}
+
+        return { success: false, error: `删除失败: ${err.message || String(err)}` };
       }
     },
 

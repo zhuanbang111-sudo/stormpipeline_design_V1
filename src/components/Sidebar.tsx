@@ -2,6 +2,7 @@ import { ToolType, Node, Link, Catchment } from '../types';
 import { MousePointer2, CircleDot, ArrowDownToLine, GitCommitHorizontal, Hexagon, Trash2, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { PIPE_MATERIALS, SURFACE_TYPES } from '../constants';
+import StatefulNumberInput from './StatefulNumberInput';
 
 // 定义 Sidebar 组件接收的属性 (Props)
 interface SidebarProps {
@@ -73,32 +74,26 @@ export default function Sidebar({
             {/* 地面标高输入框 */}
             <div>
               <label className="block text-xs text-gray-500">Ground Elevation (m)</label>
-              <input 
-                type="number" 
-                step="0.01"
-                value={(node.elevation + node.maxDepth)} 
-                onChange={e => {
-                  const newGrd = parseFloat(e.target.value) || 0;
-                  updateNode(node.id, { maxDepth: Math.max(0, newGrd - node.elevation) });
+              <StatefulNumberInput 
+                value={node.elevation + node.maxDepth} 
+                onChange={newGrd => {
+                  updateNode(node.id, { maxDepth: Math.max(0.1, newGrd - node.elevation) });
                 }}
-                className="w-full text-sm border rounded px-2 py-1 mt-1 font-mono" 
+                className="w-full text-sm border rounded px-2 py-1 mt-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500" 
               />
             </div>
             <div>
               <label className="block text-xs text-gray-500">Invert Elevation (m)</label>
-              <input 
-                type="number" 
-                step="0.01"
+              <StatefulNumberInput 
                 value={node.elevation} 
-                onChange={e => {
-                  const newInv = parseFloat(e.target.value) || 0;
+                onChange={newInv => {
                   const currentGrd = node.elevation + node.maxDepth;
                   updateNode(node.id, { 
                     elevation: newInv,
-                    maxDepth: Math.max(0, currentGrd - newInv)
+                    maxDepth: Math.max(0.1, currentGrd - newInv)
                   });
                 }} 
-                className="w-full text-sm border rounded px-2 py-1 mt-1 font-mono" 
+                className="w-full text-sm border rounded px-2 py-1 mt-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500" 
               />
             </div>
             {/* 井深（只读） */}

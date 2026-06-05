@@ -3,6 +3,7 @@ import Draggable from 'react-draggable';
 import { X, Maximize2, Minimize2 } from 'lucide-react';
 import { Node, Link } from '../types';
 import { cn } from '../lib/utils';
+import StatefulNumberInput from './StatefulNumberInput';
 
 interface ManholeListWindowProps {
   nodes: Node[];
@@ -123,32 +124,24 @@ export default function ManholeListWindow({
                       />
                     </td>
                     <td className="p-2 border-r">
-                      <input 
-                        type="number" 
-                        step="0.01"
+                      <StatefulNumberInput 
                         value={n.elevation} 
-                        onChange={e => {
-                          const newInv = parseFloat(e.target.value) || 0;
+                        onChange={newInv => {
                           const currentGrd = n.elevation + n.maxDepth;
                           updateNode(n.id, { 
                             elevation: newInv,
-                            maxDepth: Math.max(0, currentGrd - newInv)
+                            maxDepth: Math.max(0.1, currentGrd - newInv)
                           });
                         }}
-                        onClick={(e) => e.stopPropagation()}
                         className="w-full bg-transparent border-none focus:ring-1 focus:ring-blue-400 rounded px-1 font-mono"
                       />
                     </td>
                     <td className="p-2 border-r">
-                      <input 
-                        type="number" 
-                        step="0.01"
-                        value={(n.elevation + n.maxDepth)} 
-                        onChange={e => {
-                          const newGrd = parseFloat(e.target.value) || 0;
-                          updateNode(n.id, { maxDepth: Math.max(0, newGrd - n.elevation) });
+                      <StatefulNumberInput 
+                        value={n.elevation + n.maxDepth} 
+                        onChange={newGrd => {
+                          updateNode(n.id, { maxDepth: Math.max(0.1, newGrd - n.elevation) });
                         }}
-                        onClick={(e) => e.stopPropagation()}
                         className="w-full bg-transparent border-none focus:ring-1 focus:ring-blue-400 rounded px-1 font-mono"
                       />
                     </td>
