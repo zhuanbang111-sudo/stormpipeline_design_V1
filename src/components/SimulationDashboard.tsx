@@ -18,7 +18,12 @@ import {
   GitFork, 
   Droplet, 
   Info,
-  Scale
+  Scale,
+  UploadCloud,
+  FileText,
+  CheckCircle,
+  AlertTriangle,
+  TrendingUp
 } from 'lucide-react';
 
 export default function SimulationDashboard() {
@@ -36,11 +41,30 @@ export default function SimulationDashboard() {
     setCurrentTimeStep,
     setIsPlaying,
     setPlaybackSpeed,
-    runSim
+    runSim,
+    rptSummary,
+    importRptReportContent
   } = usePipelineStore();
 
   const [loopPlayback, setLoopPlayback] = useState(true);
   const [mergedPerimeter, setMergedPerimeter] = useState<{ vertices: [number, number][][]; area: number } | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+
+  const handleRptFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      if (text) {
+        const ok = importRptReportContent(text);
+        if (ok) {
+          // Success
+        } else {
+          alert("导入失败：未在文件中检索到标准的 SWMM 结果指标。请确认文件属于 EPA-SWMM 导出的 .rpt 格式文本。");
+        }
+      }
+    };
+    reader.readAsText(file);
+  };
 
   // Auto-playing logic
   useEffect(() => {
@@ -566,6 +590,199 @@ export default function SimulationDashboard() {
             </div>
           </div>
           
+        </div>
+      </div>
+
+      {/* ==================== EPA-SWMM .rpt 实测运行报告核验核心 ==================== */}
+      <div id="swmm-rpt-validation-cockpit" className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-5 md:p-6 shadow-2xl flex flex-col gap-4 mt-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">
+              <FileText className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div>
+              <h3 className="text-sm md:text-base font-bold text-white flex items-center gap-2">
+                EPA-SWMM 实测工况报告高精深度校核
+                <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 bg-indigo-500/20 text-indigo-355 border border-indigo-500/30 rounded">
+                  Analytical Engine
+                </span>
+              </h3>
+              <p className="text-xs text-slate-400 font-medium">导入 SWMM .rpt 文件，自动比对管线载荷、冒溢系数并更新数字孪生体属性</p>
+            </div>
+          </div>
+
+          {rptSummary && (
+            <button
+              id="clear-rpt-metrics-btn"
+              onClick={() => {
+                usePipelineStore.setState({ rptSummary: null });
+              }}
+              className="text-xs font-semibold text-rose-400 hover:text-rose-350 px-2.5 py-1 border border-rose-500/20 hover:bg-rose-500/10 rounded-lg transition-all"
+            >
+              清除核验载荷
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">
+          {/* Uploader Box: xl:col-span-4 */}
+          <div className="xl:col-span-4 flex flex-col">
+            <div
+              id="rpt-drag-drop-area"
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragActive(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                setDragActive(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragActive(false);
+                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                  handleRptFile(e.dataTransfer.files[0]);
+                }
+              }}
+              className={`flex-1 border-2 border-dashed rounded-xl p-5 flex flex-col items-center justify-center text-center transition-all cursor-pointer min-h-[160px] ${
+                dragActive
+                  ? 'border-indigo-500 bg-indigo-950/25'
+                  : 'border-slate-800 hover:border-slate-750 bg-slate-950/60'
+              }`}
+              onClick={() => {
+                const el = document.getElementById('rpt-file-picker');
+                el?.click();
+              }}
+            >
+              <input
+                id="rpt-file-picker"
+                type="file"
+                accept=".rpt,.txt"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleRptFile(e.target.files[0]);
+                  }
+                }}
+              />
+              <UploadCloud className="w-10 h-10 text-indigo-400 mb-2.5 animate-pulse" />
+              <span className="text-xs font-bold text-slate-200">
+                拖拽 SWMM .rpt 报告或点击选择
+              </span>
+              <span className="text-[10px] text-slate-500 mt-1">
+                支持标准 EPA-SWMM 5 文本报告 (*.rpt)
+              </span>
+            </div>
+          </div>
+
+          {/* Results Visualizer / Placeholder: xl:col-span-8 */}
+          <div className="xl:col-span-8 flex flex-col justify-between">
+            {rptSummary ? (
+              <div className="flex flex-col gap-4">
+                {/* Continuity Status Summary */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 animate-fade-in">
+                  <div className="bg-slate-950 border border-slate-850 p-3.5 rounded-xl flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-mono tracking-wide text-slate-400 block mb-0.5">
+                        径流水量平衡误差 (Runoff Continuity Error)
+                      </span>
+                      <span className="text-sm font-bold font-mono text-slate-100">
+                        {rptSummary.runoffErrorPercent !== undefined ? `${rptSummary.runoffErrorPercent}%` : '未找到该指标'}
+                      </span>
+                    </div>
+                    {rptSummary.runoffErrorPercent !== undefined && Math.abs(rptSummary.runoffErrorPercent) < 1.0 ? (
+                      <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5 text-yellow-450 shrink-0" />
+                    )}
+                  </div>
+
+                  <div className="bg-slate-950 border border-slate-850 p-3.5 rounded-xl flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-mono tracking-wide text-slate-400 block mb-0.5">
+                        管网流化传输误差 (Flow Routing Continuity Error)
+                      </span>
+                      <span className="text-sm font-bold font-mono text-slate-100">
+                        {rptSummary.flowRoutingErrorPercent !== undefined ? `${rptSummary.flowRoutingErrorPercent}%` : '未找到该指标'}
+                      </span>
+                    </div>
+                    {rptSummary.flowRoutingErrorPercent !== undefined && Math.abs(rptSummary.flowRoutingErrorPercent) < 1.0 ? (
+                      <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5 text-yellow-450 shrink-0" />
+                    )}
+                  </div>
+                </div>
+
+                {/* Sub Lists */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Critical Spills Nodes */}
+                  <div className="bg-slate-950 border border-slate-850 rounded-xl p-3.5 flex flex-col gap-2">
+                    <span className="text-[11px] font-bold text-slate-350 uppercase tracking-wide flex items-center gap-1.5 border-b border-slate-900 pb-1.5 font-mono">
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-450" />
+                      冒溢漏节点报警榜 (Flooded Nodes)
+                    </span>
+                    <div className="max-h-[140px] overflow-y-auto space-y-1.5 pr-1 font-mono">
+                      {Object.values(rptSummary.nodes).filter(n => (n.totalFloodingVolume ?? 0) > 0).length > 0 ? (
+                        Object.values(rptSummary.nodes)
+                          .filter(n => (n.totalFloodingVolume ?? 0) > 0)
+                          .sort((a,b) => (b.totalFloodingVolume ?? 0) - (a.totalFloodingVolume ?? 0))
+                          .map(node => (
+                            <div key={`flooded-${node.name}`} className="flex justify-between items-center text-[10px] bg-rose-950/15 border border-rose-500/10 p-2 rounded-lg">
+                              <span className="font-bold text-rose-400">{node.name}</span>
+                              <div className="flex gap-2 text-slate-400 text-[9px]">
+                                <span>最大瞬时: <strong className="text-white font-mono">{node.maxFloodingFlow}</strong> </span>
+                                <span>总溢量: <strong className="text-rose-400 font-mono">{node.totalFloodingVolume}</strong></span>
+                              </div>
+                            </div>
+                          ))
+                      ) : (
+                        <div className="text-[11px] text-slate-500 py-6 text-center font-sans">
+                          🎉 该雨水管网中未发现任何冒溢(Overflow)节点。
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Overloaded conduits */}
+                  <div className="bg-slate-950 border border-slate-850 rounded-xl p-3.5 flex flex-col gap-2">
+                    <span className="text-[11px] font-bold text-slate-350 uppercase tracking-wide flex items-center gap-1.5 border-b border-slate-900 pb-1.5 font-mono">
+                      <TrendingUp className="w-3.5 h-3.5 text-amber-500" />
+                      管段流量满载监控 (Overloaded Conduits)
+                    </span>
+                    <div className="max-h-[140px] overflow-y-auto space-y-1.5 pr-1 font-mono">
+                      {Object.values(rptSummary.links).filter(l => l.maxFullFlowRatio >= 0.8).length > 0 ? (
+                        Object.values(rptSummary.links)
+                          .filter(l => l.maxFullFlowRatio >= 0.8)
+                          .sort((a,b) => b.maxFullFlowRatio - a.maxFullFlowRatio)
+                          .map(link => (
+                            <div key={`overload-${link.name}`} className="flex justify-between items-center text-[10px] bg-amber-950/15 border border-amber-500/10 p-2 rounded-lg">
+                              <span className="font-bold text-amber-400">{link.name}</span>
+                              <div className="flex gap-2 text-slate-400 text-[9px]">
+                                <span>最大流速: <strong className="text-slate-200 font-mono">{link.maxVelocity} m/s</strong></span>
+                                <span>满载比率: <strong className="text-amber-400 font-mono">{(link.maxFullFlowRatio * 100).toFixed(0)}%</strong></span>
+                              </div>
+                            </div>
+                          ))
+                      ) : (
+                        <div className="text-[11px] text-slate-500 py-6 text-center font-sans">
+                          ✅ 所有主受力管道流阻满载比均契合规划防涝规范 (&lt;80%)。
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-950 border border-slate-850 rounded-xl p-6 flex flex-col justify-center items-center h-full text-center min-h-[160px]">
+                <FileText className="w-12 h-12 text-slate-750 mb-2.5" />
+                <span className="text-xs font-bold text-slate-300">未检测到已比对加载的实测报告</span>
+                <p className="text-[11px] text-slate-400 max-w-sm mt-1.5 leading-relaxed font-sans">
+                  导入标准 SWMM .rpt 结果文本后，系统将使用正则化快速检索流道负荷比与峰值流阻，帮助工程师进行数字红线溢洪预测！
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

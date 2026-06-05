@@ -49,6 +49,108 @@ export default function AdaptiveCatchmentEngine({ onClose }: { onClose?: () => v
   const [activeMode, setActiveMode] = useState<CatchmentMode>('A');
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // POSITION AND SIZE STATE for Dragging and Resizing
+  const [position, setPosition] = useState({ x: 0, y: 70 });
+  const [dimensions, setDimensions] = useState({ width: 420, height: 600 });
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    const initX = typeof window !== 'undefined' ? window.innerWidth - 440 : 800;
+    const initH = typeof window !== 'undefined' ? Math.min(650, window.innerHeight - 120) : 600;
+    setPosition({ x: initX > 0 ? initX : 10, y: 70 });
+    setDimensions({ width: 420, height: initH });
+    setHasMounted(true);
+  }, []);
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('textarea')) {
+      return; 
+    }
+
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const initX = position.x;
+    const initY = position.y;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+      
+      const newX = Math.max(10, Math.min(window.innerWidth - dimensions.width - 10, initX + deltaX));
+      const newY = Math.max(10, Math.min(window.innerHeight - dimensions.height - 10, initY + deltaY));
+      
+      setPosition({ x: newX, y: newY });
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleResizeStart = (e: React.MouseEvent, direction: 'L' | 'B' | 'BL' | 'R' | 'BR') => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const initX = position.x;
+    const initY = position.y;
+    const initW = dimensions.width;
+    const initH = dimensions.height;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+
+      let newWidth = initW;
+      let newHeight = initH;
+      let newX = initX;
+
+      const minW = 340;
+      const maxW = 900;
+      const minH = 400;
+      const maxH = window.innerHeight - 100;
+
+      if (direction === 'L' || direction === 'BL') {
+        const potentialWidth = initW - deltaX;
+        if (potentialWidth >= minW && potentialWidth <= maxW) {
+          newWidth = potentialWidth;
+          newX = initX + deltaX;
+        }
+      }
+      if (direction === 'R' || direction === 'BR') {
+        const potentialWidth = initW + deltaX;
+        if (potentialWidth >= minW && potentialWidth <= maxW) {
+          newWidth = potentialWidth;
+        }
+      }
+      if (direction === 'B' || direction === 'BL' || direction === 'BR') {
+        const potentialHeight = initH + deltaY;
+        if (potentialHeight >= minH && potentialHeight <= maxH) {
+          newHeight = potentialHeight;
+        }
+      }
+
+      setDimensions({ width: newWidth, height: newHeight });
+      setPosition(prev => ({ x: newX, y: prev.y }));
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
   // Mode A specific variables:
   const [roadRefineCoeff, setRoadRefineCoeff] = useState<number>(0.65); // 0 to 1 scaling coefficient
 
@@ -678,10 +780,56 @@ export default function AdaptiveCatchmentEngine({ onClose }: { onClose?: () => v
   };
 
   return (
-    <div className="absolute right-4 top-16 bottom-20 w-[420px] max-w-full bg-slate-900 border border-slate-800 text-slate-100 flex flex-col rounded-2xl shadow-2xl overflow-hidden z-[1000] animate-in slide-in-from-right-8 duration-350">
+    <div 
+      className="absolute bg-slate-900 border border-slate-800 text-slate-100 flex flex-col rounded-2xl shadow-2xl overflow-hidden z-[1000] animate-in slide-in-from-right-8 duration-350"
+      style={{
+        left: hasMounted ? `${position.x}px` : undefined,
+        top: hasMounted ? `${position.y}px` : '70px',
+        right: hasMounted ? undefined : '16px',
+        width: `${dimensions.width}px`,
+        height: `${dimensions.height}px`,
+        maxWidth: '100vw',
+        maxHeight: '100vh',
+      }}
+    >
+      {/* Resizing triggers */}
+      <div 
+        id="resize-handle-left"
+        onMouseDown={(e) => handleResizeStart(e, 'L')} 
+        className="absolute bottom-0 top-0 left-0 w-2.5 cursor-ew-resize z-50 hover:bg-indigo-500/10 active:bg-indigo-500/35 transition-colors"
+        title="拖动调整宽度"
+      />
+      <div 
+        id="resize-handle-right"
+        onMouseDown={(e) => handleResizeStart(e, 'R')} 
+        className="absolute bottom-0 top-0 right-0 w-2.5 cursor-ew-resize z-50 hover:bg-indigo-500/10 active:bg-indigo-500/35 transition-colors"
+        title="拖动调整宽度"
+      />
+      <div 
+        id="resize-handle-bottom"
+        onMouseDown={(e) => handleResizeStart(e, 'B')} 
+        className="absolute bottom-0 left-0 right-0 h-2.5 cursor-ns-resize z-50 hover:bg-indigo-500/10 active:bg-indigo-500/35 transition-colors"
+        title="拖动调整高度"
+      />
+      <div 
+        id="resize-handle-bottomleft"
+        onMouseDown={(e) => handleResizeStart(e, 'BL')} 
+        className="absolute bottom-0 left-0 w-3.5 h-3.5 cursor-nesw-resize z-[60] bg-indigo-500/20 hover:bg-indigo-500/50 rounded-tr transition-all"
+        title="拖动双向缩放"
+      />
+      <div 
+        id="resize-handle-bottomright"
+        onMouseDown={(e) => handleResizeStart(e, 'BR')} 
+        className="absolute bottom-0 right-0 w-3.5 h-3.5 cursor-nwse-resize z-[60] bg-indigo-500/20 hover:bg-indigo-500/50 rounded-tl transition-all"
+        title="拖动双向缩放"
+      />
       
-      {/* 标题 */}
-      <div className="bg-slate-950 p-4 border-b border-slate-850 flex justify-between items-center">
+      {/* 标题 - 按住可拖拽 */}
+      <div 
+        onMouseDown={handleDragStart}
+        className="bg-slate-950 p-4 border-b border-slate-850 flex justify-between items-center cursor-move select-none"
+        title="按住鼠标拖动控制板"
+      >
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
             <Sliders className="w-4.5 h-4.5 text-indigo-400" />

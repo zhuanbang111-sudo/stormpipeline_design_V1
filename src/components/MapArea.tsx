@@ -4,6 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Node, Link, Catchment, ToolType, SimulationResult, BackgroundFeature } from '../types';
 import { calculatePolygonArea } from '../lib/utils';
+import { usePipelineStore } from '../store/usePipelineStore';
 
 // 修复 Leaflet 默认图标在 React 中不显示的常见问题
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -126,6 +127,9 @@ export default function MapArea({
   updateNode, updateCatchment, mapType = 'tianditu_vec'
 }: MapAreaProps) {
 
+  const boundaryPolygon = usePipelineStore(state => state.boundaryPolygon);
+  const spatialAnchor = usePipelineStore(state => state.spatialAnchor);
+
   // 局部状态：记录鼠标在屏幕上的位置（目前未使用，保留用于未来扩展）
   const [mousePos, setMousePos] = useState<[number, number] | null>(null);
   // 局部状态：记录当前正在拖拽的节点信息，用于实现拖拽时的实时预览
@@ -159,6 +163,14 @@ export default function MapArea({
     window.addEventListener('map-auto-fit', handleAutoFit);
     return () => window.removeEventListener('map-auto-fit', handleAutoFit);
   }, [map]);
+
+  // 当片区导入边界或空间锚点变更时，地图自动缩放至要素范围
+  useEffect(() => {
+    if (map && boundaryPolygon && boundaryPolygon.length > 0) {
+      const bounds = L.latLngBounds(boundaryPolygon);
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 17 });
+    }
+  }, [map, boundaryPolygon]);
 
   // Center on selected elements
   useEffect(() => {
@@ -244,6 +256,51 @@ export default function MapArea({
 
         {/* 挂载地图事件监听器 */}
         <MapEvents onMapClick={onMapClick} nodes={nodes} />
+
+        {/* ==================== 渲染片区范围线与空间锚点 ==================== */}
+        {boundaryPolygon && boundaryPolygon.length > 0 && (
+          <Polygon
+            positions={boundaryPolygon}
+            pathOptions={{
+              color: '#4f46e5', // 规划深紫罗兰
+              fillColor: '#818cf8',
+              fillOpacity: 0.12,
+              weight: 3.5,
+              dashArray: '10, 8'
+            }}
+          >
+            <Tooltip sticky>
+              <div className="bg-slate-900 border border-slate-800 text-slate-100 p-2.5 rounded shadow-xl text-xs leading-relaxed font-sans">
+                <span className="font-bold text-indigo-400">片区雨水管网数字孪生范围线</span><br />
+                <span className="text-slate-400">总投影节点: <span className="font-mono text-white text-[11px]">{boundaryPolygon.length}</span></span><br />
+                <span className="text-slate-400">中心坐标系锚点: <span className="font-mono text-[11px] text-white font-bold">{spatialAnchor ? `${spatialAnchor.lat.toFixed(4)}, ${spatialAnchor.lng.toFixed(4)}` : '未计算'}</span></span>
+              </div>
+            </Tooltip>
+          </Polygon>
+        )}
+
+        {spatialAnchor && (
+          <Marker
+            position={[spatialAnchor.lat, spatialAnchor.lng]}
+            icon={new L.DivIcon({
+              className: 'custom-div-icon',
+              html: `
+                <div class="relative flex items-center justify-center">
+                  <div class="absolute w-8 h-8 bg-indigo-500 rounded-full animate-ping opacity-35"></div>
+                  <div class="w-5 h-5 bg-indigo-600 rounded-full border-2 border-white flex items-center justify-center shadow-lg">
+                    <div class="w-2.5 h-2.5 bg-yellow-300 rounded-full"></div>
+                  </div>
+                </div>
+              `,
+              iconSize: [24, 24],
+              iconAnchor: [12, 12]
+            })}
+          >
+            <Tooltip permanent direction="top" className="bg-slate-900 text-white border-none p-1 rounded text-[10px] opacity-90">
+              <span className="font-semibold font-mono">投影坐标原点 (0, 0)</span>
+            </Tooltip>
+          </Marker>
+        )}
 
         {/* ==================== 渲染导入的底图要素 ==================== */}
         {backgroundFeatures && backgroundFeatures.length > 0 && backgroundFeatures.map(f => {

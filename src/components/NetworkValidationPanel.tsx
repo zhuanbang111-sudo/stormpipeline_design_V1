@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { usePipelineStore } from '../store/usePipelineStore';
 import { checkShrinkageAnomaly } from '../engine/PipelineSanityChecker';
 import ValidationAlertCard from './ValidationAlertCard';
+import { validateStaticRules, validateHydraulicPerformance, generatePipelineReport, ValidationIssue } from '../lib/PipelineValidator';
 import { 
   AlertTriangle, 
   CheckCircle, 
@@ -80,11 +81,17 @@ export default function NetworkValidationPanel({ onClose }: NetworkValidationPan
     setSelectedElement,
     updateLinkDiameter,
     updateNodeBottomElev,
-    runSim
+    runSim,
+    rptSummary
   } = usePipelineStore();
 
-  const [activeTab, setActiveTab] = useState<'static' | 'dynamic' | 'copilot'>('static');
+  const [activeTab, setActiveTab ] = useState<'static' | 'dynamic' | 'copilot'>('static');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Compute our official rigid validation report using PipelineValidator
+  const complianceReport = useMemo(() => {
+    return generatePipelineReport(nodes, links, rptSummary || simulationResult);
+  }, [nodes, links, rptSummary, simulationResult]);
 
   // -------------------------------------------------------------
   // 自适应收缩与多维动力学空间筛查 (Pipeline Sanity Checker AI)
@@ -97,62 +104,31 @@ export default function NetworkValidationPanel({ onClose }: NetworkValidationPan
   // 一阶段静态审查算法 (Static Diagnosis)
   // -------------------------------------------------------------
   const staticWarnings = useMemo((): DiagnosticWarning[] => {
-    const warnings: DiagnosticWarning[] = [];
-
-    links.forEach(link => {
-      const fromNode = nodes.find(n => n.id === link.source);
-      const toNode = nodes.find(n => n.id === link.target);
-      if (!fromNode || !toNode) return;
-
-      // 1. 逆坡管段筛查 (Inverse Slope Check)
-      // 暴雨管网为重力流，水流方向一般为 fromNode (upstream) -> toNode (downstream)
-      // 如果起点管底标高低于终点管底标高，即为逆坡
-      if (fromNode.bottomElevation < toNode.bottomElevation) {
-        warnings.push({
-          id: `inv-slope-${link.id}`,
-          type: 'inverse_slope',
-          elementId: link.id,
-          elementName: link.name,
-          severity: 'error',
-          message: `管段逆坡：起点管底高程 (${fromNode.bottomElevation.toFixed(2)}m) 低于终点管底高程 (${toNode.bottomElevation.toFixed(2)}m)`,
-          details: {
-            upstreamId: fromNode.id,
-            upstreamName: fromNode.name,
-            upstreamVal: fromNode.bottomElevation,
-            downstreamId: toNode.id,
-            downstreamName: toNode.name,
-            downstreamVal: toNode.bottomElevation
-          }
-        });
+    const issues = validateStaticRules(nodes, links);
+    return issues.map(issue => {
+      const isError = issue.type === 'ERROR';
+      let mappedType: 'inverse_slope' | 'constriction' = 'inverse_slope';
+      if (issue.title.includes('缩径')) {
+        mappedType = 'constriction';
       }
-
-      // 2. 缩径管段筛查 (Diameter Constriction Check)
-      // 下游管段的管径不应小于上游管段的管径 (避免阻水、顶托)
-      // 查找当前管线的终点 (toNode) 也是其他管线起点 (source) 的情况
-      const downstreamLinks = links.filter(l => l.source === toNode.id);
-      downstreamLinks.forEach(dsLink => {
-        if (link.diameter > dsLink.diameter) {
-          warnings.push({
-            id: `constrict-${link.id}-${dsLink.id}`,
-            type: 'constriction',
-            elementId: dsLink.id, // Display warning on downstream or current
-            elementName: `${link.name} → ${dsLink.name}`,
-            severity: 'warning',
-            message: `管网缩径：下游管段 ${dsLink.name} 管径 (DN${dsLink.diameter}) 小于上游管段 ${link.name} 管径 (DN${link.diameter})`,
-            details: {
-              upstreamId: link.id,
-              upstreamName: link.name,
-              upstreamVal: link.diameter,
-              downstreamId: dsLink.id,
-              downstreamName: dsLink.name,
-              downstreamVal: dsLink.diameter
-            }
-          });
+      
+      return {
+        id: issue.id,
+        type: mappedType,
+        elementId: issue.targetId,
+        elementName: `${issue.targetName} (${issue.title})`,
+        severity: isError ? 'error' : 'warning',
+        message: `${issue.description} 指南: ${issue.suggestion}`,
+        details: {
+          upstreamId: issue.targetId,
+          upstreamName: issue.targetName,
+          upstreamVal: 0,
+          downstreamId: issue.targetId,
+          downstreamName: issue.targetName,
+          downstreamVal: 0
         }
-      });
+      };
     });
-
-    return warnings;
   }, [links, nodes]);
 
   // -------------------------------------------------------------
@@ -394,8 +370,8 @@ export default function NetworkValidationPanel({ onClose }: NetworkValidationPan
         {activeTab === 'static' && (
           <div className="space-y-3">
             <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              <span>空间拓扑不连续违反列表</span>
-              <span>共 {staticWarnings.length} 条</span>
+              <span>国家国标排水规范 (GB 50014) 静态物理审查</span>
+              <span>共 {complianceReport.issues.filter(i => i.category === 'static').length} 项违规</span>
             </div>
 
             {staticWarnings.length === 0 ? (

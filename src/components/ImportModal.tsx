@@ -4,6 +4,8 @@ import proj4 from 'proj4'; // 用于坐标系转换的库
 import DxfParser from 'dxf-parser'; // 用于解析DXF (CAD) 文件的库
 import { v4 as uuidv4 } from 'uuid';
 import { BackgroundFeature } from '../types';
+import { usePipelineStore } from '../store/usePipelineStore';
+import { importNodesFromGeoJson, importLinksFromGeoJson } from '../lib/GisDataImporter';
 
 // 定义 ImportModal 组件接收的属性 (Props)
 interface ImportModalProps {
@@ -13,6 +15,8 @@ interface ImportModalProps {
 }
 
 export default function ImportModal({ isOpen, onClose, onImport }: ImportModalProps) {
+  // 局部状态：存储用户功能定向模式 (底图 underlay, 排水片区边界 boundary 还是 管网拓扑 pipeline)
+  const [importMode, setImportMode] = useState<'underlay' | 'boundary' | 'pipeline'>('underlay');
   // 局部状态：存储用户选择的文件
   const [file, setFile] = useState<File | null>(null);
   // 局部状态：选择的坐标系类型（WGS84 经纬度 或 CGCS2000 投影坐标）
@@ -61,6 +65,65 @@ export default function ImportModal({ isOpen, onClose, onImport }: ImportModalPr
       const text = await file.text();
       // 获取文件扩展名
       const extension = file.name.split('.').pop()?.toLowerCase();
+
+      // Intercept and handle planning boundary importing directly
+      if (importMode === 'boundary') {
+        if (extension !== 'geojson' && extension !== 'json') {
+          throw new Error("规划片区边界文件必须是标准的 .geojson 或 .json 多边形地理要素格式。");
+        }
+        let geojson;
+        try {
+          geojson = JSON.parse(text);
+        } catch (e) {
+          throw new Error("GeoJSON 文件 JSON 格式转换解析失败。请核对文件内容。");
+        }
+        const importGeoJSONBoundary = usePipelineStore.getState().importGeoJSONBoundary;
+        const success = importGeoJSONBoundary(geojson);
+        if (!success) {
+          throw new Error("解析失败。上传的 GeoJSON 文件中未包含合法的闭合多边形（Polygon / MultiPolygon）要素！");
+        }
+        onClose();
+        return;
+      }
+
+      // Intercept and handle pipeline topology network importing directly
+      if (importMode === 'pipeline') {
+        if (extension !== 'geojson' && extension !== 'json') {
+          throw new Error("城市排水管网普查文件必须是标准的 WGS84 .geojson 或 .json 格式。");
+        }
+        let geojson;
+        try {
+          geojson = JSON.parse(text);
+        } catch (e) {
+          throw new Error("GeoJSON 文件格式错误或非合法的 JSON 数据。");
+        }
+
+        // Import Nodes first so that Link topological matching can reference them
+        const importedNodes = importNodesFromGeoJson(geojson);
+        const importedLinks = importLinksFromGeoJson(geojson);
+
+        if (importedNodes.length === 0 && importedLinks.length === 0) {
+          throw new Error("提取失败！GeoJSON 中没有发现任何合法的点特征 (Point/井标) 或线特征 (LineString/管段)。");
+        }
+
+        alert(`🎉 排水管网普查数据一键拓扑解析导入成功！\n\n• 成功导入/合并检查井 (Node): ${importedNodes.length} 个\n• 成功导入/重建管段 (Conduit): ${importedLinks.length} 段\n\n系统已经自动激活 0.2m 空间公差补齐，对缺失节点进行地表坡地及埋深容错自愈！`);
+        
+        // Auto-fit bounds if we have imported points
+        if (importedNodes.length > 0) {
+          setTimeout(() => {
+            // Fake BackgroundFeatures for map-auto-fit
+            const dummyBgFeatures = importedNodes.map(n => ({
+              id: n.id,
+              type: 'point' as const,
+              coordinates: [n.lat, n.lng] as [number, number]
+            }));
+            window.dispatchEvent(new CustomEvent('map-auto-fit', { detail: { features: dummyBgFeatures } }));
+          }, 150);
+        }
+
+        onClose();
+        return;
+      }
 
       let newFeatures: BackgroundFeature[] = [];
 
@@ -309,6 +372,54 @@ export default function ImportModal({ isOpen, onClose, onImport }: ImportModalPr
 
         {/* 弹窗内容区域 */}
         <div className="p-6 space-y-5 flex-1 overflow-y-auto">
+          {/* 导入模式定向选择器 Tabs */}
+          <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-lg">
+            <button
+              type="button"
+              onClick={() => {
+                setImportMode('underlay');
+                setError(null);
+              }}
+              className={`py-2 px-1 text-[11px] font-semibold rounded-md transition-all ${
+                importMode === 'underlay'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+              }`}
+            >
+              🗺️ 矢量设计底图
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setImportMode('boundary');
+                setError(null);
+                setCoordSystem('wgs84'); // For boundaries we expect raw geometries
+              }}
+              className={`py-2 px-1 text-[11px] font-semibold rounded-md transition-all ${
+                importMode === 'boundary'
+                  ? 'bg-indigo-600 text-white shadow'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+              }`}
+            >
+              📐 片区范围锚定
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setImportMode('pipeline');
+                setError(null);
+                setCoordSystem('wgs84');
+              }}
+              className={`py-2 px-1 text-[11px] font-semibold rounded-md transition-all ${
+                importMode === 'pipeline'
+                  ? 'bg-cyan-600 text-white shadow'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+              }`}
+            >
+              💧 管网拓扑导入
+            </button>
+          </div>
+
           {/* 显示错误信息 */}
           {error && (
             <div className="bg-red-50 text-red-700 p-3 rounded border border-red-200 flex items-start gap-2 text-sm">
@@ -330,20 +441,22 @@ export default function ImportModal({ isOpen, onClose, onImport }: ImportModalPr
           </div>
 
           {/* 坐标系选择下拉框 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Coordinate System</label>
-            <select 
-              value={coordSystem} 
-              onChange={(e) => setCoordSystem(e.target.value as any)}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-            >
-              <option value="cgcs2000_proj">CGCS2000 Projected (Gauss-Kruger)</option>
-              <option value="wgs84">WGS84 / CGCS2000 Geographic (Lat/Lng)</option>
-            </select>
-          </div>
+          {importMode === 'underlay' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Coordinate System</label>
+              <select 
+                value={coordSystem} 
+                onChange={(e) => setCoordSystem(e.target.value as any)}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              >
+                <option value="cgcs2000_proj">CGCS2000 Projected (Gauss-Kruger)</option>
+                <option value="wgs84">WGS84 / CGCS2000 Geographic (Lat/Lng)</option>
+              </select>
+            </div>
+          )}
 
           {/* 如果选择了投影坐标系，则显示额外的配置选项 */}
-          {coordSystem === 'cgcs2000_proj' && (
+          {importMode === 'underlay' && coordSystem === 'cgcs2000_proj' && (
             <div className="bg-gray-50 p-4 rounded border border-gray-200 space-y-3">
               {/* 中央子午线输入框 */}
               <div>
@@ -390,13 +503,28 @@ export default function ImportModal({ isOpen, onClose, onImport }: ImportModalPr
           )}
           
           {/* 导入说明提示框 */}
-          <div className="text-xs text-gray-500 bg-blue-50 p-3 rounded border border-blue-100">
-            <p className="font-semibold text-blue-800 mb-1">Import Notes:</p>
-            <ul className="list-disc pl-4 space-y-1">
-              <li>CAD (DXF): Lines and Points are imported as background map layers.</li>
-              <li>GIS (GeoJSON): LineStrings and Points are imported as background map layers.</li>
-              <li>Coordinates will be automatically transformed to WGS84 for the map.</li>
-            </ul>
+          <div className="text-xs text-gray-500 bg-slate-50 p-3 rounded.md border border-slate-200">
+            <p className="font-semibold text-slate-700 mb-1.5">💡 导入说明与指南 (Import Guide):</p>
+            {importMode === 'underlay' ? (
+              <ul className="list-disc pl-4 space-y-1.5 leading-relaxed">
+                <li>CAD (DXF): 常规管线图层和检查点作为不参与水力拓扑运算的地理底图背景导入显示。</li>
+                <li>GIS (GeoJSON): 点和折线要素被渲染到底图。WGS 84 及投影坐标均可。</li>
+                <li>通过开启 Swap X/Y，可以有效修正一些传统 CAD 软件导致的测绘横纵向颠倒问题。</li>
+              </ul>
+            ) : importMode === 'boundary' ? (
+              <ul className="list-disc pl-4 space-y-1.5 leading-relaxed text-indigo-950">
+                <li>本模式用于定义<strong>核心给排水规划片区范围线</strong>，必须导入包含封闭多边形的首选 GeoJSON 文件。</li>
+                <li>导入时，系统将通过拓扑算法计算其地理坐标质心，并作为**高精度空间投影锚定点** [X_anchor, Y_anchor]。</li>
+                <li>在此规划范围内，所有管线节点的距离、排水坡降与管阀截面积换算将获得**真实物理长度和流动势能校验**！</li>
+              </ul>
+            ) : (
+              <ul className="list-disc pl-4 space-y-1.5 leading-relaxed text-cyan-950">
+                <li>自动适配规划师常用的城市管网普查数据，将 Point 检查井和 LineString 管道一键转为可模拟的排水组件。</li>
+                <li>系统将使用高精度距离算法，在 <strong>0.2 米空间公差</strong> 内自动建立检查井与管道的起终拓扑联系（Topological matching）。</li>
+                <li>若管道的首尾端点缺少检查井，系统将自动自愈补齐相应检查井，并推算其基础深度，避免管网节点破损挂空。</li>
+                <li>若普查数据中缺失管道长度，会自动通过 <strong>@turf/length</strong> 沿空间地理曲率重新测算最精确的实际物理长度（米）。</li>
+              </ul>
+            )}
           </div>
         </div>
 

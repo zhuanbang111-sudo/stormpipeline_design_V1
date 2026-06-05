@@ -39,6 +39,8 @@ async function ensureTablesExist(db: any) {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT,
+      boundary_polygon_json TEXT,
+      spatial_anchor_json TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS network_nodes (
@@ -92,6 +94,18 @@ async function ensureTablesExist(db: any) {
       FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE
     );
   `);
+  
+  // Safe column migration if table existed before adding these keys
+  try {
+    await db.exec(`ALTER TABLE scenarios ADD COLUMN boundary_polygon_json TEXT;`);
+  } catch (e) {
+    // Column already exists, safe to ignore
+  }
+  try {
+    await db.exec(`ALTER TABLE scenarios ADD COLUMN spatial_anchor_json TEXT;`);
+  } catch (e) {
+    // Column already exists, safe to ignore
+  }
 }
 
 /**
@@ -115,7 +129,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
 
     // 2. Extract and validate layout payload
     const body: any = await request.json();
-    const { id, name, description, nodes, links, catchments } = body;
+    const { id, name, description, nodes, links, catchments, boundaryPolygon, spatialAnchor } = body;
 
     if (!name) {
       return new Response(JSON.stringify({ error: "Missing required parameter 'name' for the scenario." }), {
@@ -135,8 +149,14 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
 
     // Insert scenario header
     statements.push(
-      db.prepare(`INSERT INTO scenarios (id, name, description, created_at) VALUES (?, ?, ?, datetime('now'))`)
-        .bind(scenarioId, name, description || "")
+      db.prepare(`INSERT INTO scenarios (id, name, description, boundary_polygon_json, spatial_anchor_json, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))`)
+        .bind(
+          scenarioId, 
+          name, 
+          description || "", 
+          boundaryPolygon ? JSON.stringify(boundaryPolygon) : null,
+          spatialAnchor ? JSON.stringify(spatialAnchor) : null
+        )
     );
 
     // Build batch insertions for nodes
@@ -273,6 +293,24 @@ export const onRequestGet = async (context: { request: Request; env: Env }) => {
         });
       }
 
+      let boundaryPolygon = null;
+      try {
+        if (scenarioRes.boundary_polygon_json) {
+          boundaryPolygon = JSON.parse(scenarioRes.boundary_polygon_json);
+        }
+      } catch (e) {
+        console.error("Error parsing boundary_polygon_json", e);
+      }
+
+      let spatialAnchor = null;
+      try {
+        if (scenarioRes.spatial_anchor_json) {
+          spatialAnchor = JSON.parse(scenarioRes.spatial_anchor_json);
+        }
+      } catch (e) {
+        console.error("Error parsing spatial_anchor_json", e);
+      }
+
       // 2. Fetch network components
       const nodesResult = await db.prepare("SELECT * FROM network_nodes WHERE scenario_id = ?").bind(scenarioId).all<any>();
       const linksResult = await db.prepare("SELECT * FROM network_links WHERE scenario_id = ?").bind(scenarioId).all<any>();
@@ -336,6 +374,8 @@ export const onRequestGet = async (context: { request: Request; env: Env }) => {
         name: scenarioRes.name,
         description: scenarioRes.description,
         created_at: scenarioRes.created_at,
+        boundaryPolygon,
+        spatialAnchor,
         nodes,
         links,
         catchments

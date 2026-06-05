@@ -6,6 +6,7 @@ import { solveHydraulics } from '../engine/HydraulicStaticSolver';
 import { DEFAULT_MATERIAL } from '../constants';
 import { generateVoronoiGrid } from '../engine/CatchmentGenerator';
 import { calculatePolygonArea } from '../lib/utils';
+import { parseRptReport, ParsedRptSummary } from '../lib/RptParser';
 
 // We define our enhanced Node, Link, Catchment types extending the base types to support both legacy and new structures.
 export interface EnhancedNode extends Node {
@@ -15,12 +16,25 @@ export interface EnhancedNode extends Node {
   bottomElevation: number; // base level (elevation)
   waterLevel: number; // dynamic water level (meters)
   overflowRate: number; // dynamic surface flood overflow rate (L/s or m3/s)
+  
+  // SWMM RPT reports parameters
+  maxFloodingFlow?: number;
+  totalFloodingVolume?: number;
+  maxPondedDepth?: number;
+  maxInflow?: number;
+  totalInflowVolume?: number;
 }
 
 export interface EnhancedLink extends Link {
   source: string; // equivalent to fromNodeId
   target: string; // equivalent to toNodeId
   slope: number; // slope, unitless (dimensionless ratio or per mille)
+  
+  // SWMM RPT reports parameters
+  maxFlow?: number;
+  maxVelocity?: number;
+  maxFullFlowRatio?: number;
+  maxFullDepthRatio?: number;
 }
 
 export interface EnhancedCatchment extends Catchment {
@@ -65,6 +79,9 @@ export interface PipelineState {
   // Cloud scenarios support
   isSaving: boolean;
   cloudScenarios: Array<{ id: string, name: string, description: string, created_at: string }>;
+  boundaryPolygon: [number, number][] | null; // 片区雨水管网范围线 (GeoJSON boundary line coordinates as [lat, lng])
+  spatialAnchor: { lat: number; lng: number } | null; // 空间锚点 (lat, lng of the center / projection anchor)
+  rptSummary: ParsedRptSummary | null; // SWMM 运行后吐出的 .rpt 文本报告解析对象
 }
 
 export interface PipelineActions {
@@ -123,6 +140,11 @@ export interface PipelineActions {
   syncScenarioToCloud: (name: string, description: string) => Promise<boolean>;
   loadCloudScenario: (scenarioId: string) => Promise<boolean>;
   deleteCloudScenario: (scenarioId: string) => Promise<boolean>;
+  
+  importGeoJSONBoundary: (geojson: any) => boolean;
+  setBoundaryPolygon: (polygon: [number, number][] | null) => void;
+  setSpatialAnchor: (anchor: { lat: number; lng: number } | null) => void;
+  importRptReportContent: (content: string) => boolean;
 }
 
 const haversineDistance = (pt1: [number, number], pt2: [number, number]): number => {
@@ -217,6 +239,9 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
 
     isSaving: false,
     cloudScenarios: [],
+    boundaryPolygon: null,
+    spatialAnchor: null,
+    rptSummary: null,
 
     undo: () => {
       const { pastStates, nodes, links, catchments, futureStates } = get();
@@ -710,14 +735,16 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
     syncScenarioToCloud: async (name, description) => {
       set({ isSaving: true });
       try {
-        const { nodes, links, catchments } = get();
+        const { nodes, links, catchments, boundaryPolygon, spatialAnchor } = get();
         // Prepare comprehensive dataset package
         const payload = {
           name,
           description,
           nodes,
           links,
-          catchments
+          catchments,
+          boundaryPolygon,
+          spatialAnchor
         };
         const response = await fetch('/api/scenarios', {
           method: 'POST',
@@ -751,6 +778,8 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
             nodes: data.nodes || [],
             links: data.links || [],
             catchments: data.catchments || [],
+            boundaryPolygon: data.boundaryPolygon || null,
+            spatialAnchor: data.spatialAnchor || null,
             selectedElement: null
           });
           get().runSim();
@@ -775,6 +804,154 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
         return true;
       } catch (err) {
         console.error('Failed to delete cloud scenario:', err);
+        return false;
+      }
+    },
+
+    importGeoJSONBoundary: (geojson: any) => {
+      try {
+        if (!geojson) return false;
+        
+        let coordinates: [number, number][] = [];
+        
+        // Find polygon geometry
+        const findPolygon = (geom: any): [number, number][] | null => {
+          if (!geom) return null;
+          if (geom.type === 'Polygon') {
+            const exterior = geom.coordinates[0];
+            if (Array.isArray(exterior)) {
+              return exterior.map((coord: any) => [coord[1], coord[0]] as [number, number]);
+            }
+          } else if (geom.type === 'MultiPolygon') {
+            const firstPolygon = geom.coordinates[0];
+            if (Array.isArray(firstPolygon)) {
+              const exterior = firstPolygon[0];
+              if (Array.isArray(exterior)) {
+                return exterior.map((coord: any) => [coord[1], coord[0]] as [number, number]);
+              }
+            }
+          }
+          return null;
+        };
+
+        if (geojson.type === 'FeatureCollection') {
+          for (const feature of (geojson.features || [])) {
+            const coords = findPolygon(feature.geometry);
+            if (coords && coords.length > 0) {
+              coordinates = coords;
+              break;
+            }
+          }
+        } else if (geojson.type === 'Feature') {
+          const coords = findPolygon(geojson.geometry);
+          if (coords) coordinates = coords;
+        } else {
+          const coords = findPolygon(geojson);
+          if (coords) coordinates = coords;
+        }
+
+        if (coordinates.length === 0) {
+          return false;
+        }
+
+        // Compute Spatial Anchor (Centroid of polygon vertices)
+        let sumLat = 0;
+        let sumLng = 0;
+        const validCoords = coordinates.filter(c => !isNaN(c[0]) && !isNaN(c[1]));
+        if (validCoords.length === 0) return false;
+
+        validCoords.forEach(([lat, lng]) => {
+          sumLat += lat;
+          sumLng += lng;
+        });
+
+        const anchor = {
+          lat: sumLat / validCoords.length,
+          lng: sumLng / validCoords.length
+        };
+
+        // Save anchor and boundary to store
+        get().pushHistory();
+        set({
+          boundaryPolygon: validCoords,
+          spatialAnchor: anchor
+        });
+
+        // Projection mapping anchor calculation for existing nodes
+        set((state) => {
+          const updatedNodes = state.nodes.map(n => {
+            const dy = (n.lat - anchor.lat) * 111320;
+            const dx = (n.lng - anchor.lng) * 111320 * Math.cos(anchor.lat * Math.PI / 180);
+            return {
+              ...n,
+              x: Number(dx.toFixed(3)),
+              y: Number(dy.toFixed(3))
+            };
+          });
+          return { nodes: updatedNodes };
+        });
+
+        get().runSim();
+        return true;
+      } catch (err: any) {
+        console.error("Failed to import GeoJSON Boundary:", err);
+        return false;
+      }
+    },
+
+    setBoundaryPolygon: (polygon) => set({ boundaryPolygon: polygon }),
+    setSpatialAnchor: (anchor) => set({ spatialAnchor: anchor }),
+
+    importRptReportContent: (content: string) => {
+      try {
+        if (!content) return false;
+        const summary = parseRptReport(content);
+        
+        get().pushHistory();
+
+        set({ rptSummary: summary });
+
+        set((state) => {
+          const nextNodes = state.nodes.map(n => {
+            const reportNode = Object.values(summary.nodes).find(
+              rn => rn.name.toLowerCase() === n.name.toLowerCase()
+            );
+            if (reportNode) {
+              return {
+                ...n,
+                overflowRate: reportNode.maxFloodingFlow ?? n.overflowRate,
+                maxFloodingFlow: reportNode.maxFloodingFlow ?? 0,
+                totalFloodingVolume: reportNode.totalFloodingVolume ?? 0,
+                maxPondedDepth: reportNode.maxPondedDepth ?? 0,
+                maxInflow: reportNode.maxInflow ?? 0,
+                totalInflowVolume: reportNode.totalInflowVolume ?? 0,
+              } as EnhancedNode;
+            }
+            return n;
+          });
+
+          const nextLinks = state.links.map(l => {
+            const reportLink = Object.values(summary.links).find(
+              rl => rl.name.toLowerCase() === l.name.toLowerCase()
+            );
+            if (reportLink) {
+              return {
+                ...l,
+                maxFlow: reportLink.maxFlow,
+                maxVelocity: reportLink.maxVelocity,
+                maxFullFlowRatio: reportLink.maxFullFlowRatio,
+                maxFullDepthRatio: reportLink.maxFullDepthRatio,
+              } as EnhancedLink;
+            }
+            return l;
+          });
+
+          return { nodes: nextNodes, links: nextLinks };
+        });
+
+        return true;
+      } catch (err) {
+        console.error("Failed to parse and apply SWMM .rpt report:", err);
         return false;
       }
     },
