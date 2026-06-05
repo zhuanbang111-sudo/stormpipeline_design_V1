@@ -51,7 +51,7 @@ database_id = "419b3abb-8f0c-45ee-9ec7-0526d07e32f3"
 请打开项目根目录下的 `wrangler.toml` 配置文件，将其中的 `database_id` 替换为上面步骤 2 中为您真实分配获得的 ID。
 ```toml
 # wrangler.toml
-name = "stormflow-designer"
+name = "stormpipelinev1"
 pages_build_output_dir = "dist"
 compatibility_date = "2026-06-02"
 

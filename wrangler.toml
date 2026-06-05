@@ -1,7 +1,7 @@
 # Cloudflare Pages & Workers Configuration File
 # Documentation: https://developers.cloudflare.com/pages/functions/wrangler-configuration/
 
-name = "stormflow-designer"
+name = "stormpipelinev1"
 pages_build_output_dir = "dist"
 compatibility_date = "2026-06-02"
 
