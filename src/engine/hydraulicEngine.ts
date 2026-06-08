@@ -3,9 +3,11 @@ import { calculatePeakRunoff, generateHydrograph } from './hydrology';
 
 // 定义模拟参数接口
 export interface SimulationParams {
-  method: 'rational' | 'constant' | 'chicago'; // 计算方法：推理公式法 或 恒定强度法 或 芝加哥雨型法
+  routingMethod: 'RATIONAL' | 'DYNAMIC_SWMM'; // 计算内核：'RATIONAL' 静态推理法, 'DYNAMIC_SWMM' 动态动力波法
+  rainType?: 'CHICAGO' | 'CUSTOM'; // 降雨输入类型
+  method?: 'rational' | 'chicago'; // 兼容历史字段
   mapType?: 'tianditu_vec' | 'tianditu_img' | 'osm'; // 底图类型
-  rainfallIntensity: number; // 恒定降雨强度，单位：毫米/小时 (mm/hr)
+  rainfallIntensity: number; // 降雨强度 / 静态降雨强度 (mm/hr)
   stormDuration: number; // 降雨持续时间，单位：分钟 (minutes)
   returnPeriod: number; // 重现期 P (年)
   delayCoefficient: number; // 折减系数 m
@@ -17,7 +19,7 @@ export interface SimulationParams {
     n: number;
   };
   chicagoParams?: {
-    r: number; // 综合峰度系数 (0.3 ~ 0.5)
+    r: number; // 综合峰度系数 (0.1 ~ 0.9)
   };
 }
 
@@ -202,24 +204,16 @@ export function runSimulation(
 
     // B. 计算当前节点的总流量 (基于当前节点的历时 t)
     let intensity = params.rainfallIntensity; // mm/hr
-    if (params.method === 'rational') {
-      const t = nodeTravelTimes[uId];
-      const qLsha = calculateShenzhenQ(params.returnPeriod, t, params.formulaParams);
-      intensity = qLsha / 167.1 * 60; // 转换为 mm/hr
-      
-      // 严格推理公式法：Q = (∑CA) * q / 1000 (因为 q 是 L/s/ha)
-      nodeTotalFlows[uId] = nodeContributingCA[uId] * qLsha / 1000;
-    } else if (params.method === 'chicago') {
+    const isRational = params.routingMethod === 'RATIONAL' || params.method === 'rational';
+    if (isRational) {
+      // 静态推理公式法：直接根据 Q = C * I * A / 360 计算 (intensity 为静态降雨强度)
+      nodeTotalFlows[uId] = (nodeContributingCA[uId] * intensity) / 360;
+    } else {
       // 芝加哥雨型法的稳态设计流量按其最大峰值瞬时强度计算
       const r_fact = params.chicagoParams?.r ?? 0.4;
       const qPeakLsha = calculateChicagoIntensity(r_fact * params.stormDuration, params.stormDuration, r_fact, params.returnPeriod, params.formulaParams);
       intensity = qPeakLsha / 167.1 * 60; 
       nodeTotalFlows[uId] = nodeContributingCA[uId] * qPeakLsha / 1000;
-    } else {
-      // 恒定强度法：累加每个汇水区的流量
-      nodeCatchments.forEach(c => {
-        nodeTotalFlows[uId] += calculatePeakRunoff(c, intensity);
-      });
     }
 
     // C. 将流量、面积和 CA 值传递到下游管线，并更新下游历时
@@ -263,7 +257,7 @@ export function runSimulation(
           // 所以我们主要累加 CA 值和面积
           nodeContributingAreas[l.toNodeId] += areaPerLink;
           nodeContributingCA[l.toNodeId] += caPerLink;
-          if (params.method !== 'rational') {
+          if (!isRational) {
             nodeTotalFlows[l.toNodeId] += flowPerLink;
           }
         }
@@ -313,26 +307,23 @@ export function runSimulation(
     
     // 简化：使用稳态计算的比例来生成过程线
     const ratio = t <= stormDuration ? t / stormDuration : Math.max(0, 1 - (t - stormDuration) / 20);
+    const isRational = params.routingMethod === 'RATIONAL' || params.method === 'rational';
     
     catchments.forEach(c => {
-      let intensity = params.rainfallIntensity;
-      if (params.method === 'rational') {
-        // 使用该汇水区自身的地面集水时间作为初始历时
-        const t1 = c.timeOfConcentration || 10;
-        intensity = calculateShenzhenQ(params.returnPeriod, t1, params.formulaParams) / 167.1 * 60;
+      if (isRational) {
+        // 使用静态降雨强度 params.rainfallIntensity
+        const intensity = params.rainfallIntensity;
         totalRunoff += calculatePeakRunoff(c, intensity) * ratio;
-      } else if (params.method === 'chicago') {
+      } else { // DYNAMIC_SWMM (Chicago)
         const r_fact = params.chicagoParams?.r ?? 0.4;
         const instLsha = calculateChicagoIntensity(t, stormDuration, r_fact, params.returnPeriod, params.formulaParams);
         const instMmHr = instLsha / 167.1 * 60;
         totalRunoff += calculatePeakRunoff(c, instMmHr);
-      } else {
-        totalRunoff += calculatePeakRunoff(c, intensity) * ratio;
       }
     });
 
     nodes.filter(n => n.type === 'outfall').forEach(n => {
-      if (params.method === 'chicago') {
+      if (!isRational) {
         const r_fact = params.chicagoParams?.r ?? 0.4;
         const instLsha = calculateChicagoIntensity(t, stormDuration, r_fact, params.returnPeriod, params.formulaParams);
         const peakLsha = calculateChicagoIntensity(r_fact * stormDuration, stormDuration, r_fact, params.returnPeriod, params.formulaParams);

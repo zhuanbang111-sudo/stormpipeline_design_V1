@@ -9,15 +9,27 @@ import { calculatePolygonArea } from '../lib/utils';
 import { parseRptReport, ParsedRptSummary } from '../lib/RptParser';
 import { Flood2DEngine } from '../engine/Flood2DEngine';
 
-// Cached modular-level variable for persistent, zero-gapped fluid 2D computations
+// Cached modular-level variables for persistent, zero-gapped fluid 2D computations
 let flood2DEngineInstance: Flood2DEngine | null = null;
+let cachedNetworkFingerprint = '';
+
+function computeNetworkFingerprint(nodes: any[], links: any[]): string {
+  const nodesPart = nodes.map(n => `${n.id}:${Number(n.lat).toFixed(6)}:${Number(n.lng).toFixed(6)}:${Number(n.groundElevation || 0).toFixed(3)}`).join('|');
+  const linksPart = links.map(l => `${l.id}:${l.fromNodeId || l.source}:${l.toNodeId || l.target}`).join('|');
+  return `${nodesPart}#${linksPart}`;
+}
 
 function getOrInitFloodEngine(nodes: any[], links: any[], anchor: any) {
+  const currentFingerprint = computeNetworkFingerprint(nodes, links);
+
   if (flood2DEngineInstance && 
-      flood2DEngineInstance.couplingLookup.size === nodes.length &&
-      flood2DEngineInstance.rows > 0 && flood2DEngineInstance.cols > 0) {
+      cachedNetworkFingerprint === currentFingerprint &&
+      flood2DEngineInstance.rows > 0 && 
+      flood2DEngineInstance.cols > 0) {
     return flood2DEngineInstance;
   }
+
+  cachedNetworkFingerprint = currentFingerprint;
 
   // Calculate grid dimensions based on nodes bounds
   const lats = nodes.map(n => n.lat);
@@ -166,6 +178,7 @@ export interface PipelineState {
   rows2D: number;
   cols2D: number;
   gridSize2D: number;
+  evaluationSubTab: 'overview' | 'fullness' | 'overload' | 'flood';
 }
 
 export interface PipelineActions {
@@ -175,6 +188,8 @@ export interface PipelineActions {
   addNode: (x: number, y: number, type?: NodeType) => EnhancedNode;
   addLink: (source: string, target: string) => EnhancedLink | null;
   updateCatchmentPolygon: (id: string, vertices: [number, number][]) => void;
+  insertNodeIntoLink: (linkId: string, clickX: number, clickY: number) => void;
+  reorderNetworkTopology: (nodePrefix?: string, outfallPrefix?: string, startIndex?: number) => void;
 
   // Additional UI / Core actions needed for full feature integration:
   setNodes: (nodes: EnhancedNode[]) => void;
@@ -229,6 +244,7 @@ export interface PipelineActions {
   setBoundaryPolygon: (polygon: [number, number][] | null) => void;
   setSpatialAnchor: (anchor: { lat: number; lng: number } | null) => void;
   importRptReportContent: (content: string) => boolean;
+  setEvaluationSubTab: (tab: 'overview' | 'fullness' | 'overload' | 'flood') => void;
 }
 
 const haversineDistance = (pt1: [number, number], pt2: [number, number]): number => {
@@ -296,6 +312,8 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
     drawingCatchmentPoints: [],
     simulationResult: null,
     simulationParams: {
+      routingMethod: 'RATIONAL',
+      rainType: 'CHICAGO',
       method: 'rational',
       mapType: 'tianditu_vec',
       rainfallIntensity: 50,
@@ -308,6 +326,9 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
         C: 0.593,
         b: 11.03,
         n: 0.648
+      },
+      chicagoParams: {
+        r: 0.4
       }
     },
 
@@ -331,6 +352,7 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
     rows2D: 0,
     cols2D: 0,
     gridSize2D: 12.5,
+    evaluationSubTab: 'overview',
 
     undo: () => {
       const { pastStates, nodes, links, catchments, futureStates } = get();
@@ -525,6 +547,277 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
       get().runSim();
     },
 
+    insertNodeIntoLink: (linkId, clickX, clickY) => {
+      const state = get();
+      const oldLink = state.links.find((l) => l.id === linkId);
+      if (!oldLink) return;
+
+      const fromNode = state.nodes.find((n) => n.id === oldLink.source);
+      const toNode = state.nodes.find((n) => n.id === oldLink.target);
+      if (!fromNode || !toNode) {
+        console.warn("insertNodeIntoLink: Cannot find source/target nodes for the selected link.");
+        return;
+      }
+
+      // Calculate spatial distance ratios for linear interpolation of elevations
+      const distFrom = haversineDistance([fromNode.lat, fromNode.lng], [clickY, clickX]);
+      const distTo = haversineDistance([clickY, clickX], [toNode.lat, toNode.lng]);
+      const totalDist = distFrom + distTo;
+      const ratio = totalDist > 0 ? distFrom / totalDist : 0.5;
+
+      // Hydro-elevation interpolation
+      const groundElevation = fromNode.groundElevation + ratio * (toNode.groundElevation - fromNode.groundElevation);
+      const bottomElevation = fromNode.bottomElevation + ratio * (toNode.bottomElevation - fromNode.bottomElevation);
+      const maxDepth = Math.max(0.1, groundElevation - bottomElevation);
+
+      const nextNodeIndex = state.nodes.length + 1;
+      const newNodeId = uuidv4();
+      const newNodeName = `MH-${nextNodeIndex}`;
+
+      const newManhole: EnhancedNode = {
+        id: newNodeId,
+        type: 'manhole',
+        lat: clickY,
+        lng: clickX,
+        x: clickX,
+        y: clickY,
+        elevation: bottomElevation,
+        bottomElevation,
+        groundElevation,
+        maxDepth,
+        waterLevel: 0,
+        overflowRate: 0,
+        name: newNodeName,
+      };
+
+      // Recalculate split lengths and hydraulic slopes
+      const len1 = Math.max(1, Math.round(distFrom));
+      const len2 = Math.max(1, Math.round(distTo));
+
+      const slope1 = len1 > 0 ? (fromNode.bottomElevation - bottomElevation) / len1 : 0;
+      const slope2 = len2 > 0 ? (bottomElevation - toNode.bottomElevation) / len2 : 0;
+
+      const newLink1: EnhancedLink = {
+        id: uuidv4(),
+        fromNodeId: fromNode.id,
+        toNodeId: newNodeId,
+        source: fromNode.id,
+        target: newNodeId,
+        length: len1,
+        diameter: oldLink.diameter,
+        height: oldLink.height || oldLink.diameter,
+        shape: oldLink.shape || 'circular',
+        material: oldLink.material,
+        roughness: oldLink.roughness,
+        name: `${oldLink.name}a`,
+        slope: slope1,
+      };
+
+      const newLink2: EnhancedLink = {
+        id: uuidv4(),
+        fromNodeId: newNodeId,
+        toNodeId: toNode.id,
+        source: newNodeId,
+        target: toNode.id,
+        length: len2,
+        diameter: oldLink.diameter,
+        height: oldLink.height || oldLink.diameter,
+        shape: oldLink.shape || 'circular',
+        material: oldLink.material,
+        roughness: oldLink.roughness,
+        name: `${oldLink.name}b`,
+        slope: slope2,
+      };
+
+      // Push history and update state
+      get().pushHistory();
+      set((state) => {
+        const nextNodes = [...state.nodes, newManhole];
+        const nextLinks = state.links.filter((l) => l.id !== linkId).concat(newLink1, newLink2);
+
+        return {
+          nodes: nextNodes,
+          links: nextLinks,
+          selectedElement: { type: 'node', id: newNodeId },
+        };
+      });
+
+      get().runSim();
+    },
+
+    reorderNetworkTopology: (nodePrefix = 'YS_', outfallPrefix = 'YS_OF_', startIndex = 1) => {
+      // 1. Get current store states safely and duplicate them for pure updates
+      const state = get();
+      const currentNodes = [...state.nodes];
+      const currentLinks = [...state.links];
+      const currentCatchments = [...state.catchments];
+
+      if (currentNodes.length === 0) return;
+
+      // 2. Build topological graph metadata structure (adjacency, in-degree profiles)
+      const nodeIndex = new Map<string, typeof currentNodes[0]>();
+      currentNodes.forEach(n => nodeIndex.set(n.id, n));
+
+      const inDegree = new Map<string, number>();
+      currentNodes.forEach(n => inDegree.set(n.id, 0));
+
+      const adj = new Map<string, Array<{ link: typeof currentLinks[0], targetId: string }>>();
+      currentNodes.forEach(n => adj.set(n.id, []));
+
+      // Calculate incoming degree for every node from the existing piping structures
+      currentLinks.forEach(l => {
+        const sourceId = l.source || l.fromNodeId;
+        const targetId = l.target || l.toNodeId;
+
+        if (nodeIndex.has(sourceId) && nodeIndex.has(targetId)) {
+          inDegree.set(targetId, (inDegree.get(targetId) || 0) + 1);
+          adj.get(sourceId)!.push({ link: l, targetId });
+        }
+      });
+
+      // 3. Collect pure upstream source/headwater points (inDegree === 0)
+      let sources = currentNodes.filter(n => n.type === 'manhole' && inDegree.get(n.id) === 0);
+      if (sources.length === 0) {
+        sources = currentNodes.filter(n => inDegree.get(n.id) === 0);
+      }
+      if (sources.length === 0) {
+        // Safe fallback in case of highly circular loops
+        sources = [currentNodes[0]];
+      }
+
+      // 4. Trace cascade flow downwards toward discharge terminals using visited loop guard
+      const queue: typeof currentNodes = [...sources];
+      const visited = new Set<string>();
+      const orderedNodes: typeof currentNodes = [];
+
+      while (queue.length > 0) {
+        const u = queue.shift()!;
+        if (visited.has(u.id)) continue;
+        visited.add(u.id);
+        orderedNodes.push(u);
+
+        const neighbors = adj.get(u.id) || [];
+        neighbors.forEach(neigh => {
+          if (!visited.has(neigh.targetId)) {
+            // Decrement remaining in-degree for downstream propagation
+            const remaining = (inDegree.get(neigh.targetId) || 0) - 1;
+            inDegree.set(neigh.targetId, Math.max(0, remaining));
+            
+            // Queue neighbor when all upstream branches have reached this node,
+            // or push straight away to ensure cycle-tolerance and robust scanning
+            if (remaining === 0) {
+              queue.push(nodeIndex.get(neigh.targetId)!);
+            } else {
+              queue.push(nodeIndex.get(neigh.targetId)!);
+            }
+          }
+        });
+      }
+
+      // Safe clean up: if there are any orphan nodes, disconnected segments, or circle-confined joints, append them
+      currentNodes.forEach(n => {
+        if (!visited.has(n.id)) {
+          orderedNodes.push(n);
+          visited.add(n.id);
+        }
+      });
+
+      // 5. Generate beautiful structured ID codes mapped to unique identifiers
+      const oldToNewIdMap = new Map<string, string>();
+      const renamedNodes: typeof currentNodes = [];
+      let manholeIndex = startIndex;
+      let outfallIndex = startIndex;
+
+      orderedNodes.forEach(node => {
+        const isOutfall = node.type === 'outfall';
+        const prefix = isOutfall ? outfallPrefix : nodePrefix;
+        const numStr = String(isOutfall ? outfallIndex++ : manholeIndex++).padStart(2, '0');
+        const newName = `${prefix}${numStr}`;
+        const newId = newName; // Simplify to clean self-documenting human-readable ID
+
+        oldToNewIdMap.set(node.id, newId);
+
+        renamedNodes.push({
+          ...node,
+          id: newId,
+          name: newName
+        });
+      });
+
+      // 6. Cascade update links to bind new structural identifiers 
+      const renamedLinks: typeof currentLinks = [];
+      currentLinks.forEach(l => {
+        const sourceId = l.source || l.fromNodeId;
+        const targetId = l.target || l.toNodeId;
+
+        const newSourceId = oldToNewIdMap.get(sourceId);
+        const newTargetId = oldToNewIdMap.get(targetId);
+
+        if (newSourceId && newTargetId) {
+          const newLinkName = `P_${newSourceId}_${newTargetId}`;
+          const newLinkId = newLinkName;
+
+          renamedLinks.push({
+            ...l,
+            id: newLinkId,
+            name: newLinkName,
+            fromNodeId: newSourceId,
+            toNodeId: newTargetId,
+            source: newSourceId,
+            target: newTargetId
+          });
+        }
+      });
+
+      // 7. Re-map catchment hydrology receptors
+      const renamedCatchments = currentCatchments.map(c => {
+        const newOutletId = oldToNewIdMap.get(c.outletNodeId || c.nodeCtx || '');
+        if (newOutletId) {
+          return {
+            ...c,
+            outletNodeId: newOutletId,
+            nodeCtx: newOutletId
+          };
+        }
+        return c;
+      });
+
+      // 8. Align viewport selection pointers
+      let nextSelectedElement = state.selectedElement;
+      if (nextSelectedElement) {
+        if (nextSelectedElement.type === 'node') {
+          const newId = oldToNewIdMap.get(nextSelectedElement.id);
+          nextSelectedElement = newId ? { type: 'node', id: newId } : null;
+        } else if (nextSelectedElement.type === 'link') {
+          const oldLink = currentLinks.find(cl => cl.id === nextSelectedElement!.id);
+          if (oldLink) {
+            const oldSource = oldLink.source || oldLink.fromNodeId;
+            const oldTarget = oldLink.target || oldLink.toNodeId;
+            const newSource = oldToNewIdMap.get(oldSource);
+            const newTarget = oldToNewIdMap.get(oldTarget);
+            if (newSource && newTarget) {
+              nextSelectedElement = { type: 'link', id: `P_${newSource}_${newTarget}` };
+            } else {
+              nextSelectedElement = null;
+            }
+          } else {
+            nextSelectedElement = null;
+          }
+        }
+      }
+
+      // 9. Store clean state and reload the hydraulic simulation solver
+      get().pushHistory();
+      set({
+        nodes: renamedNodes,
+        links: renamedLinks,
+        catchments: renamedCatchments,
+        selectedElement: nextSelectedElement,
+      });
+
+      get().runSim();
+    },
+
     updateNode: (id, updates) => {
       get().pushHistory();
       set((state) => {
@@ -582,7 +875,11 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
       get().pushHistory();
       set((state) => ({
         nodes: state.nodes.filter((n) => n.id !== id),
-        links: state.links.filter((l) => l.source !== id && l.target !== id),
+        links: state.links.filter((l) => {
+          const s = l.source || l.fromNodeId;
+          const t = l.target || l.toNodeId;
+          return s !== id && t !== id;
+        }),
         catchments: state.catchments.map((c) => c.nodeCtx === id ? { ...c, nodeCtx: '', outletNodeId: '' } : c),
         selectedElement: state.selectedElement?.id === id ? null : state.selectedElement,
       }));
@@ -607,7 +904,7 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
               fromNodeId: source,
               toNodeId: target,
               diameter,
-              height: diameter, // Circular synchronization
+              height: updates.height !== undefined ? updates.height : (updates.shape === 'circular' || (!updates.shape && l.shape === 'circular') ? diameter : (l.height || diameter)),
               roughness,
             };
           }
@@ -856,6 +1153,10 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
         return { links: nextLinks };
       });
       get().runSim();
+    },
+
+    setEvaluationSubTab: (tab) => {
+      set({ evaluationSubTab: tab });
     },
 
     fetchCloudScenarios: async () => {

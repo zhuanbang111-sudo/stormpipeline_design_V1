@@ -35,5 +35,9 @@ export function calculatePolygonArea(polygon: [number, number][]): number {
   area = Math.abs(area) / 2;
   
   // 转换为公顷 (1 ha = 10000 m2)
-  return parseFloat((area / 10000).toFixed(2));
+  const ha = area / 10000;
+  if (ha < 0.1) {
+    return parseFloat(ha.toFixed(4)); // 对于较小的自主绘制汇水区，保留4位小数，防止硬编码或精度丢失
+  }
+  return parseFloat(ha.toFixed(2));
 }

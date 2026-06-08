@@ -1,21 +1,18 @@
 import { useState, useCallback } from 'react';
 import TopBar from './components/TopBar';
+import SettingsModal from './components/SettingsModal';
 import Sidebar from './components/Sidebar';
 import HydraulicSidebar from './components/HydraulicSidebar';
-import Toolbar from './components/Toolbar';
 import MapArea from './components/MapArea';
 import BottomPanel from './components/BottomPanel';
 import ImportModal from './components/ImportModal';
 import CloudScenarioModal from './components/CloudScenarioModal';
-import ManholeListWindow from './components/ManholeListWindow';
-import PipeListWindow from './components/PipeListWindow';
-import CatchmentListWindow from './components/CatchmentListWindow';
 import ChicagoRainGenerator from './components/ChicagoRainGenerator';
 import NetworkValidationPanel from './components/NetworkValidationPanel';
 import AdaptiveCatchmentEngine from './components/AdaptiveCatchmentEngine';
 import { useNetworkStore } from './store/networkStore';
 import { exportToDXF, exportReport } from './lib/exportUtils';
-import { X } from 'lucide-react';
+import { X, CloudRain } from 'lucide-react';
 
 export default function App() {
   // 使用自定义Hook获取应用全局状态和操作函数
@@ -30,16 +27,12 @@ export default function App() {
   // 局部状态：存储降雨强度，默认值为50毫米/小时
   const [rainfall, setRainfall] = useState(50); // mm/hr
   
-  // 局部状态：控制 Manhole 列表浮窗显示
-  const [showManholeList, setShowManholeList] = useState(false);
-  // 局部状态：控制 Pipe 列表浮窗显示
-  const [showPipeList, setShowPipeList] = useState(false);
-  // 局部状态：控制 Catchment 列表浮窗显示
-  const [showCatchmentList, setShowCatchmentList] = useState(false);
   // 局部状态：控制芝加哥暴雨发生器浮窗显示
   const [showChicagoGenerator, setShowChicagoGenerator] = useState(false);
   // 局部状态：控制水力合规性校验侧边栏显示，默认开启让用户立刻见证其威力
   const [showValidationPanel, setShowValidationPanel] = useState(true);
+  // 局部状态：当前处于的 SWMM 型主设计工作流状态步骤
+  const [activeWorkflowTab, setActiveWorkflowTab] = useState<'modeling' | 'rainfall' | 'simulation' | 'evaluation'>('modeling');
   // 局部状态：控制自适应汇水区引擎展示
   const [showAdaptiveCatchment, setShowAdaptiveCatchment] = useState(false);
   
@@ -87,10 +80,13 @@ export default function App() {
   /**
    * 处理管线点击事件
    */
-  const handleLinkClick = useCallback((id: string) => {
+  const handleLinkClick = useCallback((id: string, clickX?: number, clickY?: number) => {
     if (store.selectedTool === 'select') {
       // 只有在"选择"工具下，才能选中管线
       store.setSelectedElement({ type: 'link', id });
+    } else if (store.selectedTool === 'add_manhole' && clickX !== undefined && clickY !== undefined) {
+      // 当处于添加检查井模式时，点击管线可以在点击处动态插入检查井并切割管网
+      store.insertNodeIntoLink(id, clickX, clickY);
     }
   }, [store]);
 
@@ -128,6 +124,16 @@ export default function App() {
     <div className="flex flex-col h-screen w-full bg-gray-100 overflow-hidden font-sans">
       {/* 顶部工具栏组件 */}
       <TopBar 
+        activeTab={activeWorkflowTab}
+        onTabChange={(tab) => {
+          setActiveWorkflowTab(tab);
+          // If the user navigates, align auxiliary toggles
+          if (tab === 'evaluation') {
+            setShowValidationPanel(true);
+          } else {
+            setShowValidationPanel(false);
+          }
+        }}
         onOpenSettings={() => setShowSettings(true)} // 打开设置弹窗的回调函数
         onOpenImport={() => setShowImport(true)} // 打开导入弹窗的回调函数
         onExportDXF={() => exportToDXF(store.nodes, store.links, store.catchments)}
@@ -136,15 +142,11 @@ export default function App() {
         onRedo={store.redo} // 重做操作
         canUndo={store.canUndo} // 是否可以撤销
         canRedo={store.canRedo} // 是否可以重做
-        onOpenChicago={() => setShowChicagoGenerator(prev => !prev)}
-        onOpenValidation={() => setShowValidationPanel(prev => !prev)}
-        showValidationPanel={showValidationPanel}
-        onOpenAdaptiveCatchment={() => {
-          setShowAdaptiveCatchment(prev => !prev);
-          setShowValidationPanel(false); // keep workspace clean by hiding validation side by side if preferred
-        }}
-        showAdaptiveCatchment={showAdaptiveCatchment}
-        onOpenCloudScenario={() => setShowCloudScenario(true)}
+        nodes={store.nodes}
+        links={store.links}
+        catchments={store.catchments}
+        simulationParams={store.simulationParams}
+        simulationResult={store.simulationResult}
       />
       
       {/* 中间主要内容区域：水平布局，包含侧边栏和地图区域 */}
@@ -193,22 +195,7 @@ export default function App() {
             mapType={store.simulationParams.mapType}
           />
 
-          {/* 底部工具栏组件 */}
-          <Toolbar 
-            selectedTool={store.selectedTool}
-            setSelectedTool={store.setSelectedTool}
-            showManholeList={showManholeList}
-            setShowManholeList={setShowManholeList}
-            showPipeList={showPipeList}
-            setShowPipeList={setShowPipeList}
-            showCatchmentList={showCatchmentList}
-            setShowCatchmentList={setShowCatchmentList}
-          />
-
-          {/* 全网水力校验合规性面板 */}
-          {showValidationPanel && (
-            <NetworkValidationPanel onClose={() => setShowValidationPanel(false)} />
-          )}
+          {/* 全网水力校验合规性已移至 ④ 结果评估右侧面板子选项中 */}
 
           {/* 自适应汇水区智能部署引擎 */}
           {showAdaptiveCatchment && (
@@ -258,9 +245,23 @@ export default function App() {
 
         {/* 右侧水力计算引擎边栏 */}
         <HydraulicSidebar 
+          activeTab={activeWorkflowTab}
           params={store.simulationParams}
           setParams={store.setSimulationParams}
           runSim={store.runSim}
+          nodes={store.nodes}
+          links={store.links}
+          catchments={store.catchments}
+          onOpenChicago={() => setShowChicagoGenerator(true)}
+          selectedElement={store.selectedElement}
+          setSelectedElement={store.setSelectedElement}
+          updateNode={store.updateNode}
+          updateLink={store.updateLink}
+          updateCatchment={store.updateCatchment}
+          deleteNode={store.deleteNode}
+          deleteLink={store.deleteLink}
+          deleteCatchment={store.deleteCatchment}
+          onTabChange={setActiveWorkflowTab}
         />
       </div>
 
@@ -277,43 +278,6 @@ export default function App() {
         onClose={() => setShowCloudScenario(false)}
       />
 
-      {/* Manhole 列表浮窗 */}
-      {showManholeList && (
-        <ManholeListWindow 
-          nodes={store.nodes}
-          links={store.links}
-          updateNode={store.updateNode}
-          selectedElement={store.selectedElement}
-          setSelectedElement={store.setSelectedElement}
-          onClose={() => setShowManholeList(false)}
-        />
-      )}
-
-      {/* Pipe 列表浮窗 */}
-      {showPipeList && (
-        <PipeListWindow 
-          nodes={store.nodes}
-          links={store.links}
-          updateLink={store.updateLink}
-          selectedElement={store.selectedElement}
-          setSelectedElement={store.setSelectedElement}
-          onClose={() => setShowPipeList(false)}
-        />
-      )}
-
-      {/* Catchment 列表浮窗 */}
-      {showCatchmentList && (
-        <CatchmentListWindow 
-          catchments={store.catchments}
-          nodes={store.nodes}
-          updateCatchment={store.updateCatchment}
-          selectedElement={store.selectedElement}
-          setSelectedElement={store.setSelectedElement}
-          onClose={() => setShowCatchmentList(false)}
-          generateVoronoiCatchments={store.generateVoronoiCatchments}
-        />
-      )}
-
       {/* Chicago 芝加哥暴雨雨型发生器 */}
       {showChicagoGenerator && (
         <ChicagoRainGenerator 
@@ -323,47 +287,13 @@ export default function App() {
 
       {/* 设置弹窗：当 showSettings 为 true 时显示 */}
       {showSettings && (
-        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center">
-          <div className="bg-white rounded-lg shadow-xl w-96 overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
-              <h2 className="font-semibold text-gray-800">Simulation Settings</h2>
-              <button onClick={() => setShowSettings(false)} className="text-gray-500 hover:text-gray-700">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Map Base Layer (底图类型)</label>
-                <select 
-                  value={store.simulationParams.mapType || 'tianditu_vec'}
-                  onChange={e => store.setSimulationParams({ ...store.simulationParams, mapType: e.target.value as any })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="tianditu_vec">天地图 - 矢量 (默认)</option>
-                  <option value="tianditu_img">天地图 - 影像</option>
-                  <option value="osm">OpenStreetMap (Carto Light)</option>
-                </select>
-                <p className="text-xs text-gray-500 mt-1">Select the base map for the design area.</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Simulation Engine</label>
-                <select className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="rational">Rational Method (Kinematic Wave)</option>
-                  <option value="swmm" disabled>EPA SWMM 5.1 (Coming Soon)</option>
-                  <option value="hec-ras" disabled>HEC-RAS (Coming Soon)</option>
-                </select>
-              </div>
-            </div>
-            <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 flex justify-end">
-              <button 
-                onClick={() => setShowSettings(false)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
-              >
-                Save & Close
-              </button>
-            </div>
-          </div>
-        </div>
+        <SettingsModal 
+          onClose={() => setShowSettings(false)}
+          onOpenCloudScenario={() => {
+            setShowSettings(false);
+            setShowCloudScenario(true);
+          }}
+        />
       )}
     </div>
   );

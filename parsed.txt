@@ -1,0 +1,10 @@
+(while reading XRef): Error: Invalid XRef stream
+Error: Error: Error: Invalid XRef stream
+    at error (/app/applet/node_modules/pdf2json/lib/pdfjs-code.js:206:8)
+    at e.apply (/app/applet/node_modules/pdf2json/lib/pdfjs-code.js:4560:9)
+    at e.ensure (/app/applet/node_modules/pdf2json/lib/pdfjs-code.js:32588:24)
+    at e.ensureModel (/app/applet/node_modules/pdf2json/lib/pdfjs-code.js:32524:19)
+    at Object.onResolve (/app/applet/node_modules/pdf2json/lib/pdfjs-code.js:27198:8)
+    at Object.runHandlers (/app/applet/node_modules/pdf2json/lib/pdfjs-code.js:889:28)
+    at listOnTimeout (node:internal/timers:585:17)
+    at process.processTimers (node:internal/timers:521:7)

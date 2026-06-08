@@ -1,6 +1,6 @@
 {
-  "name": "Urban Storm Drainage Simulator",
-  "description": "An industrial-grade storm drainage digital twin and real-time hydraulic simulation cockpit",
+  "name": "StormFlow Designer",
+  "description": "专业市政防汛排涝与一维动力波管网仿真设计平台",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

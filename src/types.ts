@@ -10,6 +10,13 @@ export interface Node {
   elevation: number; // 管底标高（Invert elevation），即管道底部的海拔高度，单位通常为米
   maxDepth: number; // 最大深度，即从地面到管底的深度，单位为米
   name: string; // 节点的名称，例如 "MH-1"
+  bottomElevation?: number; // 基底或检查井底标高
+  
+  // 排放口特定属性 Outfall Specific Properties
+  outfallType?: 'FREE' | 'NORMAL' | 'FIXED' | 'TIDAL'; // 排放口边界类型
+  fixedStage?: number; // 固定潮位/水位 (m)
+  tideGate?: boolean; // 逆止阀/防潮闸面
+  tidalCurve?: string; // 关联潮位变化时序或曲线
 }
 
 // 定义管道形状：'circular'圆形，'rectangular'矩形，'egg'蛋形
@@ -20,6 +27,8 @@ export interface Link {
   id: string; // 管线的唯一标识符
   fromNodeId: string; // 起点节点的ID
   toNodeId: string; // 终点节点的ID
+  source?: string; // GIS来源节点ID外键属性
+  target?: string; // GIS目标节点ID外键属性
   length: number; // 管道长度，单位为米（m）
   diameter: number; // 管道直径（如果是矩形则是宽度），单位为毫米（mm）
   height?: number; // 管道高度（仅用于矩形管道），单位为毫米（mm）

@@ -68,9 +68,10 @@ interface FloodedManhole {
 
 interface NetworkValidationPanelProps {
   onClose?: () => void;
+  isInline?: boolean;
 }
 
-export default function NetworkValidationPanel({ onClose }: NetworkValidationPanelProps) {
+export default function NetworkValidationPanel({ onClose, isInline = false }: NetworkValidationPanelProps) {
   const { 
     nodes, 
     links, 
@@ -253,7 +254,11 @@ export default function NetworkValidationPanel({ onClose }: NetworkValidationPan
   };
 
   return (
-    <div className="absolute right-4 top-16 bottom-20 w-[420px] max-w-full bg-slate-900 border border-slate-800 text-slate-100 flex flex-col rounded-2xl shadow-2xl overflow-hidden z-[1000] animate-in slide-in-from-right-8 duration-350">
+    <div className={cn(
+      isInline 
+        ? "w-full h-full bg-slate-900 text-slate-100 flex flex-col overflow-hidden" 
+        : "absolute right-4 top-16 bottom-20 w-[420px] max-w-full bg-slate-900 border border-slate-800 text-slate-100 flex flex-col rounded-2xl shadow-2xl overflow-hidden z-[1000] animate-in slide-in-from-right-8 duration-350"
+    )}>
       
       {/* 顶部标题栏 */}
       <div className="bg-slate-950 p-4 border-b border-slate-850 flex justify-between items-center">
@@ -271,7 +276,7 @@ export default function NetworkValidationPanel({ onClose }: NetworkValidationPan
             <p className="text-[10px] text-slate-400">动静双轨韧性效验与 AI Copilot 协同</p>
           </div>
         </div>
-        {onClose && (
+        {onClose && !isInline && (
           <button 
             onClick={onClose} 
             className="text-slate-400 hover:text-slate-200 transition-colors p-1.5 hover:bg-slate-900 rounded-lg text-xs"

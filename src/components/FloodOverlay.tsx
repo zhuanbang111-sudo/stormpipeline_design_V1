@@ -61,24 +61,24 @@ export default function FloodOverlay({
         data[pixelIdx + 1] = 0; // Green
         data[pixelIdx + 2] = 0; // Blue
         data[pixelIdx + 3] = 0; // Alpha
-      } else if (depth < 0.15) {
-        // 0.01m < depth < 0.15m (浅内涝：清澈浅蓝色，Alpha = 120 中等透明度)
-        data[pixelIdx] = 56;    // Red
-        data[pixelIdx + 1] = 189; // Green
-        data[pixelIdx + 2] = 248; // Blue
-        data[pixelIdx + 3] = 120; // Alpha
       } else if (depth < 0.3) {
-        // 0.15m <= depth < 0.3m (中度受淹临界值：深亮海蓝色，Alpha = 200 较高不透明度)
-        data[pixelIdx] = 29;    // Red
-        data[pixelIdx + 1] = 78;  // Green
-        data[pixelIdx + 2] = 216; // Blue
-        data[pixelIdx + 3] = 200; // Alpha
+        // 0.01m < depth < 0.30m (蓝色 0-30cm)
+        data[pixelIdx] = 59;    // Red
+        data[pixelIdx + 1] = 130; // Green
+        data[pixelIdx + 2] = 246; // Blue (#3b82f6)
+        data[pixelIdx + 3] = 160; // Alpha
+      } else if (depth < 0.6) {
+        // 0.30m <= depth < 0.60m (黄色 30-60cm)
+        data[pixelIdx] = 245;   // Red
+        data[pixelIdx + 1] = 158; // Green
+        data[pixelIdx + 2] = 11;  // Blue (#f59e0b)
+        data[pixelIdx + 3] = 190; // Alpha
       } else {
-        // depth >= 0.3m (重度内涝高危看海报警状态：高亮警示红紫色/紫红色，Alpha = 240)
-        data[pixelIdx] = 192;   // Red
-        data[pixelIdx + 1] = 38;  // Green
-        data[pixelIdx + 2] = 211; // Blue
-        data[pixelIdx + 3] = 240; // Alpha
+        // depth >= 0.60m (红色 > 60cm)
+        data[pixelIdx] = 239;   // Red
+        data[pixelIdx + 1] = 68;  // Green
+        data[pixelIdx + 2] = 68;  // Blue (#ef4444)
+        data[pixelIdx + 3] = 220; // Alpha
       }
     }
 
