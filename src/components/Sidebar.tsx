@@ -278,6 +278,82 @@ export default function Sidebar({
             </button>
           );
         })}
+
+        {/* 🌊 Toggle Label Visibility Controls */}
+        <div className="flex-1" />
+        
+        <div className="w-8 h-[1px] bg-slate-200 my-1"></div>
+        
+        <span className="text-[8.5px] text-slate-400 font-extrabold select-none leading-none mb-1 text-center font-sans tracking-tight">图面<br/>标签</span>
+
+        {/* 1. Node Labels Toggle */}
+        <button
+          onClick={() => store.setShowNodeLabels(!store.showNodeLabels)}
+          title={`节点井与排放口标签: ${store.showNodeLabels ? '显示中' : '已关闭'}`}
+          className={cn(
+            "w-10 h-10 flex flex-col items-center justify-center rounded-lg transition-all duration-200 relative cursor-pointer group",
+            store.showNodeLabels 
+              ? "bg-slate-50 text-blue-600 border border-slate-200" 
+              : "text-slate-300 bg-transparent hover:bg-slate-50 border border-transparent"
+          )}
+        >
+          <div className="relative">
+            <CircleDot size={15} className="transition-transform group-hover:scale-105" />
+            <span className="absolute -bottom-1 -right-1 text-[7px] font-black bg-blue-600 text-white rounded px-0.5 scale-[0.75] leading-none">井</span>
+          </div>
+          <span className="text-[7.5px] font-bold leading-none mt-1 tracking-tighter">
+            {store.showNodeLabels ? '开启' : '关闭'}
+          </span>
+          {store.showNodeLabels && (
+            <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-emerald-500 rounded-full border border-white shadow-sm" />
+          )}
+        </button>
+
+        {/* 2. Pipe (Link) Labels Toggle */}
+        <button
+          onClick={() => store.setShowLinkLabels(!store.showLinkLabels)}
+          title={`管线标签: ${store.showLinkLabels ? '显示中' : '已关闭'}`}
+          className={cn(
+            "w-10 h-10 flex flex-col items-center justify-center rounded-lg transition-all duration-200 relative cursor-pointer group",
+            store.showLinkLabels 
+              ? "bg-slate-50 text-indigo-600 border border-slate-200" 
+              : "text-slate-300 bg-transparent hover:bg-slate-50 border border-transparent"
+          )}
+        >
+          <div className="relative">
+            <Minus size={15} className="transition-transform group-hover:scale-105 rotate-45" />
+            <span className="absolute -bottom-1 -right-1 text-[7px] font-black bg-indigo-600 text-white rounded px-0.5 scale-[0.75] leading-none">管</span>
+          </div>
+          <span className="text-[7.5px] font-bold leading-none mt-1 tracking-tighter">
+            {store.showLinkLabels ? '开启' : '关闭'}
+          </span>
+          {store.showLinkLabels && (
+            <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-emerald-500 rounded-full border border-white shadow-sm" />
+          )}
+        </button>
+
+        {/* 3. Catchment Labels Toggle */}
+        <button
+          onClick={() => store.setShowCatchmentLabels(!store.showCatchmentLabels)}
+          title={`汇水区/汇片标签: ${store.showCatchmentLabels ? '显示中' : '已关闭'}`}
+          className={cn(
+            "w-10 h-10 flex flex-col items-center justify-center rounded-lg transition-all duration-200 relative cursor-pointer group",
+            store.showCatchmentLabels 
+              ? "bg-slate-50 text-emerald-600 border border-slate-200" 
+              : "text-slate-300 bg-transparent hover:bg-slate-50 border border-transparent"
+          )}
+        >
+          <div className="relative">
+            <Pentagon size={15} className="transition-transform group-hover:scale-105" />
+            <span className="absolute -bottom-1 -right-1 text-[7px] font-black bg-emerald-600 text-white rounded px-0.5 scale-[0.75] leading-none">区</span>
+          </div>
+          <span className="text-[7.5px] font-bold leading-none mt-1 tracking-tighter">
+            {store.showCatchmentLabels ? '开启' : '关闭'}
+          </span>
+          {store.showCatchmentLabels && (
+            <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-emerald-500 rounded-full border border-white shadow-sm" />
+          )}
+        </button>
       </div>
 
       {/* 2. Slide/Expand Integrated Drawer Panel */}

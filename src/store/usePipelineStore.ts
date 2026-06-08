@@ -179,6 +179,9 @@ export interface PipelineState {
   cols2D: number;
   gridSize2D: number;
   evaluationSubTab: 'overview' | 'fullness' | 'overload' | 'flood';
+  showNodeLabels: boolean;
+  showLinkLabels: boolean;
+  showCatchmentLabels: boolean;
 }
 
 export interface PipelineActions {
@@ -224,6 +227,10 @@ export interface PipelineActions {
   // Elevation Management
   setDefaultInvertElevation: (elev: number) => void;
   setDefaultGroundElevation: (elev: number) => void;
+
+  setShowNodeLabels: (show: boolean) => void;
+  setShowLinkLabels: (show: boolean) => void;
+  setShowCatchmentLabels: (show: boolean) => void;
 
   // History controls
   undo: () => void;
@@ -353,6 +360,9 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
     cols2D: 0,
     gridSize2D: 12.5,
     evaluationSubTab: 'overview',
+    showNodeLabels: true,
+    showLinkLabels: true,
+    showCatchmentLabels: true,
 
     undo: () => {
       const { pastStates, nodes, links, catchments, futureStates } = get();
@@ -403,6 +413,10 @@ export const usePipelineStore = create<PipelineState & PipelineActions>((set, ge
 
     setDefaultInvertElevation: (defaultInvertElevation) => set({ defaultInvertElevation }),
     setDefaultGroundElevation: (defaultGroundElevation) => set({ defaultGroundElevation }),
+
+    setShowNodeLabels: (showNodeLabels) => set({ showNodeLabels }),
+    setShowLinkLabels: (showLinkLabels) => set({ showLinkLabels }),
+    setShowCatchmentLabels: (showCatchmentLabels) => set({ showCatchmentLabels }),
 
     updateNodeBottomElev: (id, elev) => {
       get().pushHistory();

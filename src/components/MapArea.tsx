@@ -169,6 +169,10 @@ export default function MapArea({
   const cols2D = usePipelineStore(state => state.cols2D);
   const gridSize2D = usePipelineStore(state => state.gridSize2D);
   const evaluationSubTab = usePipelineStore(state => state.evaluationSubTab);
+  
+  const showNodeLabels = usePipelineStore(state => state.showNodeLabels);
+  const showLinkLabels = usePipelineStore(state => state.showLinkLabels);
+  const showCatchmentLabels = usePipelineStore(state => state.showCatchmentLabels);
 
   const computedAnchor = useMemo(() => {
     if (spatialAnchor) return spatialAnchor;
@@ -512,7 +516,7 @@ export default function MapArea({
               />
               
               {/* 在汇水区中心显示标签（面积和排放节点） */}
-              {positions.length > 0 && (
+              {positions.length > 0 && showCatchmentLabels && (
                 <Marker position={[centerLat, centerLng]} opacity={0} interactive={false}>
                   <Tooltip permanent direction="center" className="bg-transparent border-none shadow-none text-[10px] font-bold p-0 text-center whitespace-nowrap" interactive={false}>
                     <div style={{ textShadow: '1.5px 1.5px 0 #fff, -1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff', lineHeight: '1.2' }} className="text-emerald-800 text-center">
@@ -747,16 +751,18 @@ export default function MapArea({
               )}
               
               {/* 在管线中点渲染一个不可见的标记，用于挂载永久显示的标签 */}
-              <Marker position={[(fromLat + toLat) / 2, (fromLng + toLng) / 2]} opacity={0} interactive={false}>
-                <Tooltip permanent direction="center" className="bg-transparent border-none shadow-none text-[10px] font-bold p-0 text-center whitespace-nowrap" interactive={false}>
-                  <div style={{ textShadow: '1.5px 1.5px 0 #fff, -1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff', lineHeight: '1.2' }} className="text-indigo-900 text-center">
-                    <span className="text-[11px] font-extrabold bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 inline-block mb-0.5">
-                      {l.name}{simRes ? ` | ${simRes.flow.toFixed(3)} m³/s` : ''}
-                    </span><br/>
-                    <span className="text-[9px] font-semibold text-indigo-600 block">L={l.length}m, {slope.toFixed(1)}‰, {l.shape === 'rectangular' ? `B×H=${l.diameter}×${l.height}` : `D=${l.diameter}`}</span>
-                  </div>
-                </Tooltip>
-              </Marker>
+              {showLinkLabels && (
+                <Marker position={[(fromLat + toLat) / 2, (fromLng + toLng) / 2]} opacity={0} interactive={false}>
+                  <Tooltip permanent direction="center" className="bg-transparent border-none shadow-none text-[10px] font-bold p-0 text-center whitespace-nowrap" interactive={false}>
+                    <div style={{ textShadow: '1.5px 1.5px 0 #fff, -1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff', lineHeight: '1.2' }} className="text-indigo-900 text-center">
+                      <span className="text-[11px] font-extrabold bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 inline-block mb-0.5">
+                        {l.name}{simRes ? ` | ${simRes.flow.toFixed(3)} m³/s` : ''}
+                      </span><br/>
+                      <span className="text-[9px] font-semibold text-indigo-600 block">L={l.length}m, {slope.toFixed(1)}‰, {l.shape === 'rectangular' ? `B×H=${l.diameter}×${l.height}` : `D=${l.diameter}`}</span>
+                    </div>
+                  </Tooltip>
+                </Marker>
+              )}
             </React.Fragment>
           );
         })}
@@ -844,36 +850,38 @@ export default function MapArea({
               }}
             >
               {/* 节点下方永久显示的标签（地面标高和标高属性） */}
-              <Tooltip 
-                permanent 
-                direction="bottom" 
-                offset={[0, 10]} 
-                className="bg-transparent border-none shadow-none text-[10px] font-bold p-0 text-center whitespace-nowrap" 
-                interactive={false}
-              >
-                <div 
-                  style={{ textShadow: '1.5px 1.5px 0 #fff, -1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff', lineHeight: '1.2' }}
-                  className={n.type === 'outfall' ? "text-rose-850 text-center" : "text-slate-800 text-center"}
+              {showNodeLabels && (
+                <Tooltip 
+                  permanent 
+                  direction="bottom" 
+                  offset={[0, 10]} 
+                  className="bg-transparent border-none shadow-none text-[10px] font-bold p-0 text-center whitespace-nowrap" 
+                  interactive={false}
                 >
-                  {n.type === 'outfall' ? (
-                    <>
-                      <span className="text-[11px] font-extrabold bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded border border-rose-350 mb-0.5 inline-block">
-                        {n.name} [排放口]
-                      </span><br />
-                      <span className="text-[9px] font-semibold text-rose-600 block">Inv: {invertElev.toFixed(2)}m</span>
-                      {simRes && <><span className="text-red-600 font-extrabold block text-[10px] mt-0.5">Depth: {simRes.depth.toFixed(2)}m</span></>}
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-[11px] font-extrabold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-350 mb-0.5 inline-block">
-                        {n.name} [检查井]
-                      </span><br />
-                      <span className="text-[9px] font-semibold text-slate-500 block">Gr: {groundElev.toFixed(2)} | Inv: {invertElev.toFixed(2)}</span>
-                      {simRes && <><span className="text-blue-600 font-extrabold block text-[10px] mt-0.5">Depth: {simRes.depth.toFixed(2)}m</span></>}
-                    </>
-                  )}
-                </div>
-              </Tooltip>
+                  <div 
+                    style={{ textShadow: '1.5px 1.5px 0 #fff, -1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff', lineHeight: '1.2' }}
+                    className={n.type === 'outfall' ? "text-rose-850 text-center" : "text-slate-800 text-center"}
+                  >
+                    {n.type === 'outfall' ? (
+                      <>
+                        <span className="text-[11px] font-extrabold bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded border border-rose-350 mb-0.5 inline-block">
+                          {n.name} [排放口]
+                        </span><br />
+                        <span className="text-[9px] font-semibold text-rose-600 block">Inv: {invertElev.toFixed(2)}m</span>
+                        {simRes && <><span className="text-red-600 font-extrabold block text-[10px] mt-0.5">Depth: {simRes.depth.toFixed(2)}m</span></>}
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-[11px] font-extrabold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-350 mb-0.5 inline-block">
+                          {n.name} [检查井]
+                        </span><br />
+                        <span className="text-[9px] font-semibold text-slate-500 block">Gr: {groundElev.toFixed(2)} | Inv: {invertElev.toFixed(2)}</span>
+                        {simRes && <><span className="text-blue-600 font-extrabold block text-[10px] mt-0.5">Depth: {simRes.depth.toFixed(2)}m</span></>}
+                      </>
+                    )}
+                  </div>
+                </Tooltip>
+              )}
             </Marker>
           );
         })}
